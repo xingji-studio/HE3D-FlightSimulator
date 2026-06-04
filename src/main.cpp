@@ -2,7 +2,7 @@
  * HE3D Engine for 3D - Flight Simulator
  * XJ380 platform. C++11 classes. No standard library. No BridgeEngine.
  */
-#include "he3d.hpp"
+#include "flight_sim.hpp"
 #include <time.h>
 
 // ============================================================================
@@ -67,8 +67,12 @@ int main(int argc, char** argv, char** envp) {
     cam.position = {0, 12, 5};
 
     GameObject plane;
-    plane.mesh     = Mesh::LoadOBJ("Biplane.obj");
-    if (!plane.mesh) plane.mesh = Mesh::CreateAirplane(); // fallback
+    plane.mesh = Mesh::LoadOBJ("Biplane.obj");
+    if (!plane.mesh) {
+        plane.mesh = Mesh::Create(FLIGHT_FALLBACK_AIRCRAFT_VERTICES,
+                                  FLIGHT_FALLBACK_AIRCRAFT_UVS,
+                                  FLIGHT_FALLBACK_AIRCRAFT_VERTEX_COUNT);
+    }
     plane.position = {0, 13, 0};
     Texture* pTex  = Texture::LoadBMP("biplane.bmp");
     bool hasTex    = (pTex && pTex->valid);
@@ -169,7 +173,7 @@ int main(int argc, char** argv, char** envp) {
                         tiles[i].gx = need[j].x; tiles[i].gz = need[j].z;
                         tiles[i].active = true;
                         float wx = tiles[i].gx * TS, wz = tiles[i].gz * TS;
-                        tiles[i].obj.mesh = Mesh::CreatePlane(GC, GS, wx, wz);
+                        tiles[i].obj.mesh = CreateTerrainTileMesh(GC, GS, wx, wz);
                         tiles[i].obj.position = {wx, 0, wz};
                         need[j].done = true;
                         break;

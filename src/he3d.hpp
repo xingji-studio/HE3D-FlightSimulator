@@ -7,13 +7,13 @@
 #include "x3api.h"
 
 // ============================================================================
-// Override new/delete -> XJ380 malloc/free (no libstdc++)
+// Override new/delete -> XAPI memory management (no libstdc++)
 // Note: XJ380 size_t=unsigned long long but compiler expects unsigned long
 // ============================================================================
-void* operator new(unsigned long sz);
-void* operator new[](unsigned long sz);
-void  operator delete(void* p) noexcept;
-void  operator delete[](void* p) noexcept;
+void *operator new(unsigned long sz);
+void *operator new[](unsigned long sz);
+void  operator delete(void *p) noexcept;
+void  operator delete[](void *p) noexcept;
 
 // ============================================================================
 // DirectionalLight
@@ -31,8 +31,8 @@ struct DirectionalLight {
 // ============================================================================
 class Mesh {
 public:
-    float3* vertices;  // new[]-allocated, 3*N for N triangles
-    float2* uvs;       // new[]-allocated, same count as vertices
+    float3 *vertices;  // new[]-allocated, 3*N for N triangles
+    float2 *uvs;       // new[]-allocated, same count as vertices
     int     vertCount; // total vertex count (3 per triangle)
 
     Mesh() : vertices(nullptr), uvs(nullptr), vertCount(0) {}
@@ -42,9 +42,13 @@ public:
     Mesh(const Mesh&) = delete;
     Mesh& operator=(const Mesh&) = delete;
 
-    static Mesh* LoadOBJ(const char* filename);
-    static Mesh* CreatePlane(int gridCount, float step, float worldX, float worldZ);
-    static Mesh* CreateAirplane();
+    bool Init(int vertexCount);
+    bool Init(const float3 *srcVertices, const float2 *srcUvs, int vertexCount);
+
+    static Mesh *Create(int vertexCount);
+    static Mesh *Create(const float3 *srcVertices, const float2 *srcUvs,
+                        int vertexCount);
+    static Mesh *LoadOBJ(const char *filename);
 };
 
 // ============================================================================
@@ -54,7 +58,7 @@ class Texture {
 public:
     int     width;
     int     height;
-    float3* pixels; // new[]-allocated, width*height
+    float3 *pixels; // new[]-allocated, width*height
     bool    valid;
 
     Texture() : width(0), height(0), pixels(nullptr), valid(false) {}
@@ -64,7 +68,7 @@ public:
     Texture& operator=(const Texture&) = delete;
 
     float3 Sample(float u, float v) const;
-    static Texture* LoadBMP(const char* filename);
+    static Texture *LoadBMP(const char *filename);
 };
 
 // ============================================================================
@@ -72,7 +76,7 @@ public:
 // ============================================================================
 class GameObject {
 public:
-    Mesh*   mesh;
+    Mesh   *mesh;
     float3  position;
     quat    orientation;
 
@@ -115,12 +119,12 @@ private:
     int     m_height;
     HDLE    m_window;
 
-    XCOLOR* m_colorBuf; // m_width * m_height
-    float*  m_depthBuf; // m_width * m_height
+    XCOLOR *m_colorBuf; // m_width * m_height
+    float  *m_depthBuf; // m_width * m_height
 
-    void RasterizeSolid(const float3* v_view, const float2* p_screen, float3 color);
-    void RasterizeTextured(const float3* v_view, const float2* p_screen,
-                           const float2* uvs, float intensity, const Texture& tex);
+    void RasterizeSolid(const float3 *v_view, const float2 *p_screen, float3 color);
+    void RasterizeTextured(const float3 *v_view, const float2 *p_screen,
+                           const float2 *uvs, float intensity, const Texture& tex);
 
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;

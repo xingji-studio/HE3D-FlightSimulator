@@ -1,20 +1,36 @@
 /*
  * HE3D Engine for 3D - C++ Implementation
- * OBJ loader, terrain generation, BMP texture, software rasterizer.
- * Uses new/delete -> XJ380 malloc/free. No standard library. No BridgeEngine.
+ * OBJ loader, BMP texture loader, and software rasterizer.
+ * Uses XAPI memory management. No standard library. No BridgeEngine.
  */
 #include "he3d.hpp"
 
-// new/delete -> XJ380 malloc/free
-void* operator new(unsigned long sz)          { return malloc((size_t)sz); }
-void* operator new[](unsigned long sz)        { return malloc((size_t)sz); }
-void  operator delete(void* p) noexcept       { free(p); }
-void  operator delete[](void* p) noexcept     { free(p); }
+// Route C++ allocation through documented XAPI memory management.
+void *operator new(unsigned long sz)
+{
+    return xapi_AllocateMemory((UINT64)sz);
+}
+
+void *operator new[](unsigned long sz)
+{
+    return xapi_AllocateMemory((UINT64)sz);
+}
+
+void operator delete(void *p) noexcept
+{
+    xapi_FreeMemory(p);
+}
+
+void operator delete[](void *p) noexcept
+{
+    xapi_FreeMemory(p);
+}
 
 // ============================================================================
 // [0] Float parser (XJ380 has no strtod/strtof)
 // ============================================================================
-static const char* ParseFloat(const char* s, float* out) {
+static const char *ParseFloat(const char *s, float *out)
+{
     while (*s == ' ' || *s == '\t') s++;
     float sign = 1.0f;
     if (*s == '-') { sign = -1.0f; s++; }
@@ -46,7 +62,8 @@ static const char* ParseFloat(const char* s, float* out) {
 // ============================================================================
 // [1] In-memory line reader for OBJ parsing
 // ============================================================================
-static const char* MemGetLine(const char* buf, const char* end, char* out, int maxLen) {
+static const char *MemGetLine(const char *buf, const char *end, char *out, int maxLen)
+{
     if (buf >= end) return nullptr;
     const char* ln = buf;
     while (ln < end && *ln != '\n' && *ln != '\r' && (ln - buf) < maxLen - 1) ln++;
@@ -61,7 +78,8 @@ static const char* MemGetLine(const char* buf, const char* end, char* out, int m
 }
 
 // Count a face's vertex count & triangulate count
-static int CountFaceVerts(const char* p) {
+static int CountFaceVerts(const char *p)
+{
     int cnt = 0;
     while (*p) {
         while (*p == ' ' || *p == '\t') p++;
@@ -73,98 +91,98 @@ static int CountFaceVerts(const char* p) {
 }
 
 // ============================================================================
-// [2] Terrain noise functions
+// [3] Mesh allocation helpers
 // ============================================================================
-static float Noise(int x, int z) {
-    int n = x + z * 57;
-    n = (n << 13) ^ n;
-    return 1.0f - (float)((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff) / 1073741824.0f;
-}
-static float GetHeight(float x, float z) {
-    return Noise((int)(x * 0.05f), (int)(z * 0.05f)) * 8.0f
-         + Noise((int)(x * 0.2f),  (int)(z * 0.2f))  * 1.5f;
-}
+bool Mesh::Init(int vertexCount)
+{
+    delete[] vertices;
+    delete[] uvs;
+    vertices = nullptr;
+    uvs = nullptr;
+    vertCount = 0;
 
-// ============================================================================
-// [3] Mesh::CreateAirplane — Procedural airplane (no file I/O needed)
-// ============================================================================
-Mesh* Mesh::CreateAirplane() {
-    // Simple biplane: fuselage + 2 wings + tail
-    //  fuselage: elongated box (8 triangles)
-    //  upper wing: flat rectangle (2 triangles)
-    //  lower wing: flat rectangle (2 triangles)
-    //  tail fin: triangle (1 triangle)
-    const int NT = 13;
-    Mesh* m = new Mesh();
-    m->vertCount = NT * 3;
-    m->vertices  = new float3[NT * 3];
-    m->uvs       = new float2[NT * 3];
-    float3* v = m->vertices;
-    float2* uv = m->uvs;
-    int idx = 0;
-
-    // Fuselage: front point at (0,0,0.5), back at (0,0,-0.5), radius ~0.08
-    // 4-sided tube: front face (0,0,0.5), back face (0,0,-0.5)
-    float fz = 0.45f, bz = -0.45f, r = 0.07f;
-    float3 ff = {0, 0, fz}, bf = {0, 0, bz};
-    float3 fq[4] = {{ r, 0, fz}, { 0, r, fz}, {-r, 0, fz}, { 0,-r, fz}};
-    float3 bq[4] = {{ r, 0, bz}, { 0, r, bz}, {-r, 0, bz}, { 0,-r, bz}};
-    for (int i = 0; i < 4; i++) {
-        int j = (i+1)%4;
-        // Two triangles per quad face
-        v[idx] = fq[i]; uv[idx]={0,0}; idx++;
-        v[idx] = fq[j]; uv[idx]={1,0}; idx++;
-        v[idx] = bq[i]; uv[idx]={0,1}; idx++;
-        v[idx] = fq[j]; uv[idx]={1,0}; idx++;
-        v[idx] = bq[j]; uv[idx]={1,1}; idx++;
-        v[idx] = bq[i]; uv[idx]={0,1}; idx++;
+    if (vertexCount <= 0)
+    {
+        return false;
     }
 
-    // Upper wing (flat, slightly above fuselage)
-    float wx = 0.35f, wy = 0.15f, wz = 0.06f;
-    v[idx] = {-wx,  wy, -wz}; uv[idx]={0,0}; idx++;
-    v[idx] = { wx,  wy, -wz}; uv[idx]={1,0}; idx++;
-    v[idx] = {-wx,  wy,  wz}; uv[idx]={0,1}; idx++;
-    v[idx] = { wx,  wy, -wz}; uv[idx]={1,0}; idx++;
-    v[idx] = { wx,  wy,  wz}; uv[idx]={1,1}; idx++;
-    v[idx] = {-wx,  wy,  wz}; uv[idx]={0,1}; idx++;
+    vertices = new float3[vertexCount];
+    uvs = new float2[vertexCount];
+    if (!vertices || !uvs)
+    {
+        delete[] vertices;
+        delete[] uvs;
+        vertices = nullptr;
+        uvs = nullptr;
+        return false;
+    }
 
-    // Lower wing
-    v[idx] = {-wx*0.9f, -wy, -wz}; uv[idx]={0,0}; idx++;
-    v[idx] = { wx*0.9f, -wy, -wz}; uv[idx]={1,0}; idx++;
-    v[idx] = {-wx*0.9f, -wy,  wz}; uv[idx]={0,1}; idx++;
-    v[idx] = { wx*0.9f, -wy, -wz}; uv[idx]={1,0}; idx++;
-    v[idx] = { wx*0.9f, -wy,  wz}; uv[idx]={1,1}; idx++;
-    v[idx] = {-wx*0.9f, -wy,  wz}; uv[idx]={0,1}; idx++;
+    vertCount = vertexCount;
+    return true;
+}
 
-    // Tail fin (vertical, at back)
-    v[idx] = {0, 0, bz-0.05f}; uv[idx]={0,0}; idx++;
-    v[idx] = {0, 0.1f, bz-0.15f}; uv[idx]={1,0}; idx++;
-    v[idx] = {0, 0, bz-0.15f}; uv[idx]={0.5f,1}; idx++;
+Mesh *Mesh::Create(int vertexCount)
+{
+    Mesh *mesh = new Mesh();
+    if (!mesh || !mesh->Init(vertexCount))
+    {
+        delete mesh;
+        return nullptr;
+    }
+    return mesh;
+}
 
-    m->vertCount = idx;
-    return m;
+bool Mesh::Init(const float3 *srcVertices, const float2 *srcUvs, int vertexCount)
+{
+    if (!Init(vertexCount))
+    {
+        return false;
+    }
+
+    for (int i = 0; i < vertexCount; i++)
+    {
+        vertices[i] = srcVertices[i];
+        uvs[i]      = srcUvs ? srcUvs[i] : float2(0.0f, 0.0f);
+    }
+    return true;
+}
+
+Mesh *Mesh::Create(const float3 *srcVertices, const float2 *srcUvs,
+                   int vertexCount)
+{
+    Mesh *mesh = new Mesh();
+    if (!mesh || !mesh->Init(srcVertices, srcUvs, vertexCount))
+    {
+        delete mesh;
+        return nullptr;
+    }
+    return mesh;
 }
 
 // ============================================================================
 // [4] Mesh::LoadOBJ — Two-pass over in-memory file data
 // ============================================================================
-Mesh* Mesh::LoadOBJ(const char* filename) {
-    XFILE* xf = xapi_OpenFile((WSTR)filename);
-    if (!xf || !xf->buffer || xf->length < 4) {
-        if (xf) xapi_CloseFile(xf);
+Mesh *Mesh::LoadOBJ(const char *filename)
+{
+    XFILE *xf = xapi_OpenFile((WSTR)filename);
+    if (!xf || !xf->buffer || xf->length < 4)
+    {
+        if (xf)
+        {
+            xapi_CloseFile(xf);
+        }
         return nullptr;
     }
 
-    const char* buf = (const char*)xf->buffer;
-    const char* end = buf + xf->length;
+    const char *buf = (const char *)xf->buffer;
+    const char *end = buf + xf->length;
 
     // ---- Pass 1: count ----
     int vCount = 0, vtCount = 0, triCount = 0;
-    const char* c = buf;
+    const char *c = buf;
     char line[512];
     while ((c = MemGetLine(c, end, line, sizeof(line))) != nullptr) {
-        char* p = line;
+        char *p = line;
         while (*p == ' ' || *p == '\t') p++;
         if (p[0] == 'v' && p[1] == ' ') vCount++;
         else if (p[0] == 'v' && p[1] == 't' && (p[2] == ' ' || p[2] == '\t')) vtCount++;
@@ -173,45 +191,54 @@ Mesh* Mesh::LoadOBJ(const char* filename) {
             if (fv >= 3) triCount += fv - 2;
         }
     }
-    if (vCount == 0 || triCount == 0) { xapi_CloseFile(xf); return nullptr; }
+    if (vCount == 0 || triCount == 0)
+    {
+        xapi_CloseFile(xf);
+        return nullptr;
+    }
 
     // Allocate
-    float3* all_v  = new float3[vCount];
-    float2* all_vt = (vtCount > 0) ? new float2[vtCount] : nullptr;
+    float3 *all_v  = new float3[vCount];
+    float2 *all_vt = (vtCount > 0) ? new float2[vtCount] : nullptr;
     int vc = 0, vtc = 0;
 
-    Mesh* mesh = new Mesh();
     int totalVerts = triCount * 3;
-    mesh->vertices  = new float3[totalVerts];
-    mesh->uvs       = new float2[totalVerts];
+    Mesh *mesh = Mesh::Create(totalVerts);
+    if (!mesh)
+    {
+        delete[] all_v;
+        delete[] all_vt;
+        xapi_CloseFile(xf);
+        return nullptr;
+    }
     mesh->vertCount = 0; // will increment during face processing
 
     // ---- Pass 2: fill ----
     c = buf;
     while ((c = MemGetLine(c, end, line, sizeof(line))) != nullptr) {
-        char* p = line;
+        char *p = line;
         while (*p == ' ' || *p == '\t') p++;
 
         if (p[0] == 'v' && p[1] == ' ') {
             float3 vtx;
             ParseFloat(p + 2, &vtx.x);
-            char* py = p + 2; while (*py && *py != ' ' && *py != '\t') py++; while (*py == ' ' || *py == '\t') py++;
+            char *py = p + 2; while (*py && *py != ' ' && *py != '\t') py++; while (*py == ' ' || *py == '\t') py++;
             ParseFloat(py, &vtx.y);
-            char* pz = py;     while (*pz && *pz != ' ' && *pz != '\t') pz++; while (*pz == ' ' || *pz == '\t') pz++;
+            char *pz = py;     while (*pz && *pz != ' ' && *pz != '\t') pz++; while (*pz == ' ' || *pz == '\t') pz++;
             ParseFloat(pz, &vtx.z);
             if (vc < vCount) all_v[vc++] = vtx;
         }
         else if (p[0] == 'v' && p[1] == 't' && (p[2] == ' ' || p[2] == '\t') && all_vt) {
             float2 uv;
-            char* pu = p + 3; ParseFloat(pu, &uv.x);
-            char* pv = pu;     while (*pv && *pv != ' ' && *pv != '\t') pv++; while (*pv == ' ' || *pv == '\t') pv++;
+            char *pu = p + 3; ParseFloat(pu, &uv.x);
+            char *pv = pu;     while (*pv && *pv != ' ' && *pv != '\t') pv++; while (*pv == ' ' || *pv == '\t') pv++;
             float rawV; ParseFloat(pv, &rawV); uv.y = 1.0f - rawV;
             if (vtc < vtCount) all_vt[vtc++] = uv;
         }
         else if (p[0] == 'f' && p[1] == ' ') {
             struct FV { int v, vt; };
             FV fv[32]; int fc = 0;
-            char* tok = p + 2;
+            char *tok = p + 2;
             while (*tok && fc < 32) {
                 while (*tok == ' ' || *tok == '\t') tok++;
                 if (*tok == 0 || *tok == '\n' || *tok == '\r') break;
@@ -243,44 +270,13 @@ Mesh* Mesh::LoadOBJ(const char* filename) {
 
     delete[] all_v;
     delete[] all_vt;
-    if (mesh->vertCount == 0) { delete mesh; xapi_CloseFile(xf); return nullptr; }
-    xapi_CloseFile(xf);
-    return mesh;
-}
-
-// ============================================================================
-// [4] Mesh::CreatePlane — Procedural terrain
-// ============================================================================
-Mesh* Mesh::CreatePlane(int gridCount, float step, float worldX, float worldZ) {
-    int triCount  = (gridCount - 1) * (gridCount - 1) * 2;
-    int vertCount = triCount * 3;
-    float half    = (float)(gridCount - 1) * step * 0.5f;
-
-    Mesh* mesh = new Mesh();
-    mesh->vertices  = new float3[vertCount];
-    mesh->uvs       = new float2[vertCount];
-    mesh->vertCount = 0;
-
-    for (int z = 0; z < gridCount - 1; z++) {
-        for (int x = 0; x < gridCount - 1; x++) {
-            float lx0 = x * step - half, lz0 = z * step - half;
-            float lx1 = (x + 1) * step - half, lz1 = (z + 1) * step - half;
-            float wx0 = lx0 + worldX, wz0 = lz0 + worldZ;
-            float wx1 = lx1 + worldX, wz1 = lz1 + worldZ;
-
-            float3 v1 = {lx0, GetHeight(wx0, wz0), lz0};
-            float3 v2 = {lx0, GetHeight(wx0, wz1), lz1};
-            float3 v3 = {lx1, GetHeight(wx1, wz0), lz0};
-            float3 v4 = {lx1, GetHeight(wx1, wz1), lz1};
-
-            int i = mesh->vertCount;
-            mesh->vertices[i] = v1; mesh->vertices[i+1] = v2; mesh->vertices[i+2] = v3;
-            mesh->uvs[i] = {0,0};  mesh->uvs[i+1] = {0,1};  mesh->uvs[i+2] = {1,0};
-            mesh->vertices[i+3] = v3; mesh->vertices[i+4] = v2; mesh->vertices[i+5] = v4;
-            mesh->uvs[i+3] = {1,0};  mesh->uvs[i+4] = {0,1};  mesh->uvs[i+5] = {1,1};
-            mesh->vertCount += 6;
-        }
+    if (mesh->vertCount == 0)
+    {
+        delete mesh;
+        xapi_CloseFile(xf);
+        return nullptr;
     }
+    xapi_CloseFile(xf);
     return mesh;
 }
 
@@ -300,37 +296,57 @@ float3 Texture::Sample(float u, float v) const {
 // ============================================================================
 // [6] Texture::LoadBMP — Via XJ380 VFS
 // ============================================================================
-Texture* Texture::LoadBMP(const char* filename) {
+Texture *Texture::LoadBMP(const char *filename)
+{
     XFILE* xf = xapi_OpenFile((WSTR)filename);
-    if (!xf || !xf->buffer || xf->length < 54) { if (xf) xapi_CloseFile(xf); return nullptr; }
+    if (!xf || !xf->buffer || xf->length < 54)
+    {
+        if (xf)
+        {
+            xapi_CloseFile(xf);
+        }
+        return nullptr;
+    }
 
-    unsigned char* d = (unsigned char*)xf->buffer;
+    unsigned char *d = (unsigned char *)xf->buffer;
     unsigned int   flen = (unsigned int)xf->length;
     int            bw = 0, bh = 0, bpp = 0, compr = 0;
     unsigned int   off = 0;
 
-    if (d[0] != 'B' || d[1] != 'M') { xapi_CloseFile(xf); return nullptr; }
+    if (d[0] != 'B' || d[1] != 'M')
+    {
+        xapi_CloseFile(xf);
+        return nullptr;
+    }
     off   = d[10] | (d[11] << 8) | (d[12] << 16) | (d[13] << 24);
-    if (flen < off) { xapi_CloseFile(xf); return nullptr; }
+    if (flen < off)
+    {
+        xapi_CloseFile(xf);
+        return nullptr;
+    }
     bw    = (int)(d[18] | (d[19] << 8) | (d[20] << 16) | (d[21] << 24));
     bh    = (int)(d[22] | (d[23] << 8) | (d[24] << 16) | (d[25] << 24));
     bpp   = (int)(d[28] | (d[29] << 8));
     compr = (int)(d[30] | (d[31] << 8) | (d[32] << 16) | (d[33] << 24));
-    if (bpp != 24 || compr != 0) { xapi_CloseFile(xf); return nullptr; }
+    if (bpp != 24 || compr != 0)
+    {
+        xapi_CloseFile(xf);
+        return nullptr;
+    }
 
-    Texture* tex = new Texture();
+    Texture *tex = new Texture();
     tex->width  = bw;
     tex->height = (bh < 0) ? -bh : bh;
-    float3* pbuf = new float3[tex->width * tex->height];
+    float3 *pbuf = new float3[tex->width * tex->height];
 
     {
         int  rsize   = (bw * 3 + 3) & ~3;
         bool topDown = (bh < 0);
-        unsigned char* src = d + off;
+        unsigned char *src = d + off;
         for (int y = 0; y < tex->height; y++) {
             int sY = topDown ? y : (tex->height - 1 - y);
-            unsigned char* row = src + sY * rsize;
-            float3* dst = pbuf + y * tex->width;
+            unsigned char *row = src + sY * rsize;
+            float3 *dst = pbuf + y * tex->width;
             for (int x = 0; x < tex->width; x++) {
                 dst[x] = {row[2] / 255.0f, row[1] / 255.0f, row[0] / 255.0f};
                 row += 3;

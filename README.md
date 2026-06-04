@@ -22,10 +22,11 @@ HE3D Flight Simulator is a C++11 software-rendered 3D flight demo for the XJ380/
 
 ## Project Layout
 
-- `src/main.cpp`: flight simulation entry point and main loop
 - `src/he3d.hpp`: engine class interfaces
-- `src/he3d.cpp`: OBJ/BMP loading, mesh generation, renderer, rasterizer
+- `src/he3d.cpp`: generic mesh initialization, OBJ/BMP loading, renderer, rasterizer
 - `src/he3d_math.h`: compact math library for vectors, quaternions, and scalar math
+- `src/flight_sim.hpp` and `src/flight_sim.cpp`: flight simulator data and terrain tile mesh setup
+- `src/main.cpp`: flight simulation entry point and main loop
 - `include/`: XJ380 API and compatibility headers
 - `Biplane.obj`: aircraft mesh asset
 - `biplane.bmp`: aircraft texture asset
