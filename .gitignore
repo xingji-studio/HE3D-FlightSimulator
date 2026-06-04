@@ -19,6 +19,8 @@ filebrowser.db
 *.swp
 *~
 
-# Nested repository metadata from archived prototype
-OldSrc/.git/
-OldSrc/.vscode/
+# Archived prototype (not for distribution)
+OldSrc/
+
+# Platform SDK documentation (not for distribution)
+XJ380_API_Spec_CPP_1_3.pdf
