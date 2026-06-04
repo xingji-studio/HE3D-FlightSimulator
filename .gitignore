@@ -1,0 +1,24 @@
+# Build outputs
+he3d_flight
+he3d_flight.exe
+xxcc-temp-out/
+obj/
+obj-gui/
+obj-tui/
+*.o
+*.a
+*.exe
+
+# Local tools and state
+filebrowser
+filebrowser.db
+.claude/
+
+# Editor/OS noise
+.DS_Store
+*.swp
+*~
+
+# Nested repository metadata from archived prototype
+OldSrc/.git/
+OldSrc/.vscode/
