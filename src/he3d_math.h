@@ -174,17 +174,10 @@ HE3D_ALWAYS_INLINE float he3d_tanf(float x) {
 // ============================================================================
 // halving the trig work for quaternion construction (FromEuler needs 6 calls).
 
-#if HE3D_HAS_BUILTINS && defined(__clang__)
-  // Clang provides __builtin_sincosf (maps to fsincos or SSE variant)
-  HE3D_ALWAYS_INLINE void he3d_sincosf(float x, float *s, float *c) {
-      __builtin_sincosf(x, s, c);
-  }
-#else
-  HE3D_ALWAYS_INLINE void he3d_sincosf(float x, float *s, float *c) {
-      *s = he3d_sinf(x);
-      *c = he3d_cosf(x);  // cos(x) = sin(x + PI/2)
-  }
-#endif
+HE3D_ALWAYS_INLINE void he3d_sincosf(float x, float *s, float *c) {
+    *s = he3d_sinf(x);
+    *c = he3d_cosf(x);
+}
 
 // ============================================================================
 // [6] atan2 — rational approximation with quadrant correction
