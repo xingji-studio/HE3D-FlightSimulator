@@ -126,7 +126,7 @@ int main(int argc, char** argv, char** envp) {
         quat dP = quat::FromEuler({cP * 1.8f * dt, 0, 0});
         quat dY = quat::FromEuler({0, cY * 1.2f * dt, 0});
         quat dR = quat::FromEuler({0, 0, cR * 2.5f * dt});
-        plane.orientation = (plane.orientation * dY * dP * dR).normalize();
+        plane.orientation = (plane.orientation * dY * dP * dR).normalizeFast();
         float3 fwd = plane.Forward();
         plane.position = plane.position + fwd * (15.0f * dt);
 

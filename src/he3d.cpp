@@ -488,7 +488,7 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, float3 c
     float fovRad   = cam.fov * 0.01745329252f;
     float fovScale = 1.0f / he3d_tanf(fovRad * 0.5f);
     float aspect   = (float)m_width / (float)m_height;
-    float3 lightDir = mainLight.direction.normalize();
+    float3 lightDir = mainLight.direction.normalizeFast();
     quat camInv    = cam.orientation.inverse();
 
     float3* verts = obj.mesh->vertices;
@@ -516,7 +516,7 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, float3 c
         if (area <= 0.0f) continue;
 
         float3 e1 = vw[1] - vw[0], e2 = vw[2] - vw[0];
-        float3 n = float3::cross(e1, e2).normalize();
+        float3 n = float3::cross(e1, e2).normalizeFast();
         float diff = HE3D_MAX(0.0f, float3::dot(n, lightDir));
         float intens = mainLight.ambient + diff;
 
@@ -536,7 +536,7 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, const Te
     float fovRad   = cam.fov * 0.01745329252f;
     float fovScale = 1.0f / he3d_tanf(fovRad * 0.5f);
     float aspect   = (float)m_width / (float)m_height;
-    float3 lightDir = mainLight.direction.normalize();
+    float3 lightDir = mainLight.direction.normalizeFast();
     quat camInv    = cam.orientation.inverse();
 
     float3* verts = obj.mesh->vertices;
@@ -565,7 +565,7 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, const Te
         if (float3::dot(float3::cross(ab, ac), vv[0]) >= 0) continue;
 
         float3 we1 = vw[1] - vw[0], we2 = vw[2] - vw[0];
-        float diff = HE3D_MAX(0.0f, float3::dot(float3::cross(we1, we2).normalize(), lightDir));
+        float diff = HE3D_MAX(0.0f, float3::dot(float3::cross(we1, we2).normalizeFast(), lightDir));
         float intens = mainLight.ambient + diff;
 
         RasterizeTextured(vv, ps, tuvs, intens, tex);
