@@ -40,13 +40,7 @@ The main build uses the XJ380 XACT `xxcc` compiler and C++11:
 make
 ```
 
-The Makefile currently points to:
-
-```sh
-/home/bnear8273/Develop/XJ380_XACT_2026v4_linux/bin/xxcc
-```
-
-Update `CXX` in `Makefile` if your XACT installation is in a different location.
+Ensure `xxcc` is available in your `PATH` before running `make`.
 
 ## Clean
 

@@ -2,7 +2,7 @@
 # Compiler: XJ380 XACT xxcc (requires Clang 18.1.8+ backend)
 # Note: xxcc -c has a known crash bug; compile+link in one step.
 
-CXX      := /home/bnear8273/Develop/XJ380_XACT_2026v4_linux/bin/xxcc
+CXX      := xxcc
 CXXFLAGS := -std=c++11 -O2 -I./src -I./include
 
 .PHONY: all clean rebuild
