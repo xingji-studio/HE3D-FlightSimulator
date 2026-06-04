@@ -32,10 +32,11 @@ struct DirectionalLight {
 class Mesh {
 public:
     float3 *vertices;  // new[]-allocated, 3*N for N triangles
-    float2 *uvs;       // new[]-allocated, same count as vertices
-    int     vertCount; // total vertex count (3 per triangle)
+    float2 *uvs;       // new[]-allocated, same capacity as vertices
+    int     vertCount; // active vertex count, 3 per triangle
+    int     capacity;  // allocated vertex count
 
-    Mesh() : vertices(nullptr), uvs(nullptr), vertCount(0) {}
+    Mesh() : vertices(nullptr), uvs(nullptr), vertCount(0), capacity(0) {}
     ~Mesh() { delete[] vertices; delete[] uvs; }
 
     // Disallow copy (owns memory)

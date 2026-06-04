@@ -100,6 +100,7 @@ bool Mesh::Init(int vertexCount)
     vertices = nullptr;
     uvs = nullptr;
     vertCount = 0;
+    capacity = 0;
 
     if (vertexCount <= 0)
     {
@@ -118,6 +119,7 @@ bool Mesh::Init(int vertexCount)
     }
 
     vertCount = vertexCount;
+    capacity = vertexCount;
     return true;
 }
 
@@ -134,7 +136,7 @@ Mesh *Mesh::Create(int vertexCount)
 
 bool Mesh::Init(const float3 *srcVertices, const float2 *srcUvs, int vertexCount)
 {
-    if (!Init(vertexCount))
+    if (!srcVertices || !Init(vertexCount))
     {
         return false;
     }
@@ -197,9 +199,16 @@ Mesh *Mesh::LoadOBJ(const char *filename)
         return nullptr;
     }
 
-    // Allocate
+    // Allocate temporary OBJ buffers after the first pass has established sizes.
     float3 *all_v  = new float3[vCount];
     float2 *all_vt = (vtCount > 0) ? new float2[vtCount] : nullptr;
+    if (!all_v || (vtCount > 0 && !all_vt))
+    {
+        delete[] all_v;
+        delete[] all_vt;
+        xapi_CloseFile(xf);
+        return nullptr;
+    }
     int vc = 0, vtc = 0;
 
     int totalVerts = triCount * 3;
@@ -249,19 +258,46 @@ Mesh *Mesh::LoadOBJ(const char *filename)
                     if (*tok != '/') { ti = 0; while (*tok >= '0' && *tok <= '9') { ti = ti * 10 + (*tok - '0'); tok++; } }
                     if (*tok == '/') { tok++; while (*tok >= '0' && *tok <= '9') tok++; }
                 }
-                fv[fc].v = vi - 1; fv[fc].vt = ti - 1; fc++;
+                fv[fc].v = vi - 1;
+                fv[fc].vt = ti - 1;
+                fc++;
             }
-            for (int i = 1; i < fc - 1; i++) {
+
+            bool validFace = (fc >= 3);
+            for (int i = 0; i < fc && validFace; i++)
+            {
+                if (fv[i].v < 0 || fv[i].v >= vc)
+                {
+                    validFace = false;
+                }
+                if (fv[i].vt >= vtc)
+                {
+                    validFace = false;
+                }
+            }
+            if (!validFace)
+            {
+                continue;
+            }
+
+            for (int i = 1; i < fc - 1 && mesh->vertCount + 3 <= mesh->capacity; i++)
+            {
                 int idx = mesh->vertCount;
-                mesh->vertices[idx]   = all_v[fv[0].v];
-                mesh->vertices[idx+1] = all_v[fv[i].v];
-                mesh->vertices[idx+2] = all_v[fv[i+1].v];
-                if (all_vt) {
-                    mesh->uvs[idx]   = all_vt[fv[0].vt];
-                    mesh->uvs[idx+1] = all_vt[fv[i].vt];
-                    mesh->uvs[idx+2] = all_vt[fv[i+1].vt];
-                } else {
-                    mesh->uvs[idx] = mesh->uvs[idx+1] = mesh->uvs[idx+2] = {0,0};
+                bool hasUvs = all_vt && fv[0].vt >= 0 && fv[i].vt >= 0
+                           && fv[i + 1].vt >= 0;
+
+                mesh->vertices[idx]     = all_v[fv[0].v];
+                mesh->vertices[idx + 1] = all_v[fv[i].v];
+                mesh->vertices[idx + 2] = all_v[fv[i + 1].v];
+                if (hasUvs)
+                {
+                    mesh->uvs[idx]     = all_vt[fv[0].vt];
+                    mesh->uvs[idx + 1] = all_vt[fv[i].vt];
+                    mesh->uvs[idx + 2] = all_vt[fv[i + 1].vt];
+                }
+                else
+                {
+                    mesh->uvs[idx] = mesh->uvs[idx + 1] = mesh->uvs[idx + 2] = {0,0};
                 }
                 mesh->vertCount += 3;
             }
@@ -319,7 +355,7 @@ Texture *Texture::LoadBMP(const char *filename)
         return nullptr;
     }
     off   = d[10] | (d[11] << 8) | (d[12] << 16) | (d[13] << 24);
-    if (flen < off)
+    if (off >= flen)
     {
         xapi_CloseFile(xf);
         return nullptr;
@@ -328,28 +364,71 @@ Texture *Texture::LoadBMP(const char *filename)
     bh    = (int)(d[22] | (d[23] << 8) | (d[24] << 16) | (d[25] << 24));
     bpp   = (int)(d[28] | (d[29] << 8));
     compr = (int)(d[30] | (d[31] << 8) | (d[32] << 16) | (d[33] << 24));
-    if (bpp != 24 || compr != 0)
+
+    int texHeight = (bh < 0) ? -bh : bh;
+    if (bw <= 0 || texHeight <= 0 || compr != 0)
+    {
+        xapi_CloseFile(xf);
+        return nullptr;
+    }
+
+    int bytesPerPixel = 0;
+    if (bpp == 24)
+    {
+        bytesPerPixel = 3;
+    }
+    else if (bpp == 32)
+    {
+        bytesPerPixel = 4;
+    }
+    else
+    {
+        xapi_CloseFile(xf);
+        return nullptr;
+    }
+
+    const int MAX_BMP_DIMENSION = 8192;
+    if (bw > MAX_BMP_DIMENSION || texHeight > MAX_BMP_DIMENSION)
+    {
+        xapi_CloseFile(xf);
+        return nullptr;
+    }
+
+    unsigned int rowSize = ((unsigned int)bw * (unsigned int)bytesPerPixel + 3U) & ~3U;
+    unsigned int dataSize = flen - off;
+    if (rowSize == 0 || dataSize / rowSize < (unsigned int)texHeight)
     {
         xapi_CloseFile(xf);
         return nullptr;
     }
 
     Texture *tex = new Texture();
+    if (!tex)
+    {
+        xapi_CloseFile(xf);
+        return nullptr;
+    }
+
     tex->width  = bw;
-    tex->height = (bh < 0) ? -bh : bh;
+    tex->height = texHeight;
     float3 *pbuf = new float3[tex->width * tex->height];
+    if (!pbuf)
+    {
+        delete tex;
+        xapi_CloseFile(xf);
+        return nullptr;
+    }
 
     {
-        int  rsize   = (bw * 3 + 3) & ~3;
         bool topDown = (bh < 0);
         unsigned char *src = d + off;
         for (int y = 0; y < tex->height; y++) {
             int sY = topDown ? y : (tex->height - 1 - y);
-            unsigned char *row = src + sY * rsize;
+            unsigned char *row = src + sY * rowSize;
             float3 *dst = pbuf + y * tex->width;
             for (int x = 0; x < tex->width; x++) {
                 dst[x] = {row[2] / 255.0f, row[1] / 255.0f, row[0] / 255.0f};
-                row += 3;
+                row += bytesPerPixel;
             }
         }
     }

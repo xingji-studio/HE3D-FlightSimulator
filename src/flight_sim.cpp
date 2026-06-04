@@ -57,7 +57,10 @@ Mesh *CreateTerrainTileMesh(int gridCount, float step, float worldX, float world
     float half    = (float)(gridCount - 1) * step * 0.5f;
 
     Mesh *mesh = Mesh::Create(vertCount);
-    if (!mesh) return nullptr;
+    if (!mesh)
+    {
+        return nullptr;
+    }
 
     mesh->vertCount = 0;
     for (int z = 0; z < gridCount - 1; z++)
@@ -79,6 +82,11 @@ Mesh *CreateTerrainTileMesh(int gridCount, float step, float worldX, float world
             float3 v4 = {lx1, FlightTerrainHeight(wx1, wz1), lz1};
 
             int i = mesh->vertCount;
+            if (i + 6 > mesh->capacity)
+            {
+                return mesh;
+            }
+
             mesh->vertices[i]     = v1;
             mesh->vertices[i + 1] = v2;
             mesh->vertices[i + 2] = v3;
