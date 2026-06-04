@@ -475,7 +475,7 @@ void Renderer::Clear(float3 color) {
     // Single merged loop: interleave color+depth writes for cache locality
     for (int i = 0; i < total; i++) {
         m_colorBuf[i] = c;
-        m_depthBuf[i] = 10000.0f;
+        m_depthBuf[i] = 0.0f;  // 1/z far plane = 0 (1/inf)
     }
 }
 
@@ -629,10 +629,10 @@ void Renderer::RasterizeSolid(const float3* vv, const float2* ps, float3 color) 
             if (w0 >= 0.0f && w1 >= 0.0f && w2 >= 0.0f) {
                 float ciz = w0 * iz0 + w1 * iz1 + w2 * iz2;
                 if (ciz > 0.000001f) {
-                    float z = 1.0f / ciz;
                     int idx = rb + x;
-                    if (z < db[idx]) {
-                        db[idx] = z;
+                    // Depth buffer stores 1/z: closer = larger value
+                    if (ciz > db[idx]) {
+                        db[idx] = ciz;
                         cbuf[idx] = xc;
                     }
                 }
@@ -692,13 +692,14 @@ void Renderer::RasterizeTextured(const float3* vv, const float2* ps,
             if (w0 >= 0.0f && w1 >= 0.0f && w2 >= 0.0f) {
                 float ciz = w0 * iz0 + w1 * iz1 + w2 * iz2;
                 if (ciz > 0.000001f) {
-                    float z = 1.0f / ciz;
                     int idx = rb + x;
-                    if (z < db[idx]) {
-                        db[idx] = z;
+                    // Depth buffer stores 1/z: closer = larger value
+                    if (ciz > db[idx]) {
+                        db[idx] = ciz;
+                        float invCiz = 1.0f / ciz;
                         // Perspective-correct UV with branchless fractional wrap
-                        float u = he3d_fracf((w0 * uz0.x + w1 * uz1.x + w2 * uz2.x) * z);
-                        float v = he3d_fracf((w0 * uz0.y + w1 * uz1.y + w2 * uz2.y) * z);
+                        float u = he3d_fracf((w0 * uz0.x + w1 * uz1.x + w2 * uz2.x) * invCiz);
+                        float v = he3d_fracf((w0 * uz0.y + w1 * uz1.y + w2 * uz2.y) * invCiz);
                         int tx = (int)(u * tw);
                         int ty = (int)(v * th);
                         tx = HE3D_CLAMP(tx, 0, twm1);
