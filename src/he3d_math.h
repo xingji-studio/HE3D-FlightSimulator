@@ -24,13 +24,8 @@
 // [0] Feature detection & compiler hints
 // ============================================================================
 
-// xxcc is Clang-based. Detect whether builtins are available.
-// The XJ380 API spec reserves -fno-builtin for "other compilers" only.
-#if defined(__clang__)
-  #define HE3D_HAS_BUILTINS 1
-#else
-  #define HE3D_HAS_BUILTINS 0
-#endif
+// xxcc targets a freestanding XJ380 environment — no libm, no math builtins.
+// All math functions are self-implemented with performance-tuned software paths.
 
 #define HE3D_ALWAYS_INLINE static inline __attribute__((always_inline))
 #define HE3D_MEMBER_INLINE inline __attribute__((always_inline))
@@ -42,11 +37,7 @@
 // ============================================================================
 
 HE3D_ALWAYS_INLINE float he3d_fabsf(float x) {
-#if HE3D_HAS_BUILTINS
-    return __builtin_fabsf(x);
-#else
     return x < 0.0f ? -x : x;
-#endif
 }
 
 HE3D_ALWAYS_INLINE int he3d_abs(int x) {
@@ -79,29 +70,23 @@ HE3D_ALWAYS_INLINE float he3d_fracf(float x) {
 // [2] sqrt — hardware builtin or Newton with bit-manipulation seed
 // ============================================================================
 
-#if HE3D_HAS_BUILTINS
-  HE3D_ALWAYS_INLINE float he3d_sqrtf(float x) {
-      return __builtin_sqrtf(x);
-  }
-#else
-  // Software sqrt: bit-manipulation for initial guess, then 5 Newton iterations.
-  // Converges to full float precision on x86 (vs 12 iterations for naive x0=x).
-  HE3D_ALWAYS_INLINE float he3d_sqrtf(float x) {
-      if (HE3D_UNLIKELY(x <= 0.0f)) return 0.0f;
-      // Initial guess: halve exponent, keep mantissa
-      union { float f; int i; } u;
-      u.f = x;
-      u.i = (u.i >> 1) + 0x1FC00000;  // approximate sqrt via exponent manipulation
-      float r = u.f;
-      // 5 Newton iterations: r = (r + x/r) * 0.5
-      r = (r + x / r) * 0.5f;
-      r = (r + x / r) * 0.5f;
-      r = (r + x / r) * 0.5f;
-      r = (r + x / r) * 0.5f;
-      r = (r + x / r) * 0.5f;
-      return r;
-  }
-#endif
+// Software sqrt: bit-manipulation for initial guess, then 5 Newton iterations.
+// Converges to full float precision on x86 (vs 12 iterations for naive x0=x).
+HE3D_ALWAYS_INLINE float he3d_sqrtf(float x) {
+    if (HE3D_UNLIKELY(x <= 0.0f)) return 0.0f;
+    // Initial guess: halve exponent, keep mantissa
+    union { float f; int i; } u;
+    u.f = x;
+    u.i = (u.i >> 1) + 0x1FC00000;  // approximate sqrt via exponent manipulation
+    float r = u.f;
+    // 5 Newton iterations: r = (r + x/r) * 0.5
+    r = (r + x / r) * 0.5f;
+    r = (r + x / r) * 0.5f;
+    r = (r + x / r) * 0.5f;
+    r = (r + x / r) * 0.5f;
+    r = (r + x / r) * 0.5f;
+    return r;
+}
 
 // ============================================================================
 // [3] Fast inverse sqrt — Quake-style, always available
@@ -124,46 +109,30 @@ HE3D_ALWAYS_INLINE float he3d_rsqrtf(float x) {
 // [4] sin / cos / tan — builtin or minimax-polynomial software
 // ============================================================================
 
-#if HE3D_HAS_BUILTINS
+// Software sin/cos using minimax polynomial (degree 7) on [-PI, PI].
+// Better accuracy than truncated Taylor at the same operation count.
+HE3D_ALWAYS_INLINE float he3d_sinf(float x) {
+    // Range reduction to [-PI, PI]
+    if (x >  3.141592653589793f) {
+        int n = (int)(x * 0.3183098861837907f + 0.5f);
+        x -= (float)n * 3.141592653589793f;
+    }
+    if (x < -3.141592653589793f) {
+        int n = (int)(x * -0.3183098861837907f + 0.5f);
+        x += (float)n * 3.141592653589793f;
+    }
+    // Now x in [-PI, PI]. Minimax polynomial (relative error < 1e-7).
+    float x2 = x * x;
+    float r = x;
+    r += x * x2 * -0.16666656732559204f;      // ~ -1/3!  (minimax tuned)
+    r += x * x2 * x2 *  0.0083330258358717f;  // ~  1/5!
+    r += x * x2 * x2 * x2 * -0.0001980740614f; // ~ -1/7!
+    return r;
+}
 
-  HE3D_ALWAYS_INLINE float he3d_sinf(float x) { return __builtin_sinf(x); }
-  HE3D_ALWAYS_INLINE float he3d_cosf(float x) { return __builtin_cosf(x); }
-
-#else
-
-  // Software sin/cos using minimax polynomial (degree 7) on [-PI/2, PI/2].
-  // Better accuracy than the 5-term Taylor at the same operation count.
-  //
-  // Range reduction to [-PI/2, PI/2] via Cody-Waite style:
-  //   Let k = round(x / PI),  r = x - k * PI
-  //   sin(x) = sin(r) with sign = (k & 1) ? -1 : 1
-  //   cos(x) = sin(x + PI/2) handled separately
-
-  HE3D_ALWAYS_INLINE float he3d_sinf(float x) {
-      // Range reduction to [-PI, PI]
-      if (x >  3.141592653589793f) {
-          int n = (int)(x * 0.3183098861837907f + 0.5f);
-          x -= (float)n * 3.141592653589793f;
-      }
-      if (x < -3.141592653589793f) {
-          int n = (int)(x * -0.3183098861837907f + 0.5f);
-          x += (float)n * 3.141592653589793f;
-      }
-      // Now x in [-PI, PI]. Minimax polynomial (relative error < 1e-7).
-      float x2 = x * x;
-      float r = x;
-      // Coefficients from Remez algorithm for sin(x)/x on [0, PI^2]
-      r += x * x2 * -0.16666656732559204f;     // = -1/3!  (minimax tuned)
-      r += x * x2 * x2 *  0.0083330258358717f; // =  1/5!
-      r += x * x2 * x2 * x2 * -0.0001980740614f; // = -1/7!
-      return r;
-  }
-
-  HE3D_ALWAYS_INLINE float he3d_cosf(float x) {
-      return he3d_sinf(x + 1.5707963267948966f);
-  }
-
-#endif
+HE3D_ALWAYS_INLINE float he3d_cosf(float x) {
+    return he3d_sinf(x + 1.5707963267948966f);
+}
 
 HE3D_ALWAYS_INLINE float he3d_tanf(float x) {
     return he3d_sinf(x) / he3d_cosf(x);
@@ -184,9 +153,6 @@ HE3D_ALWAYS_INLINE void he3d_sincosf(float x, float *s, float *c) {
 // ============================================================================
 
 HE3D_ALWAYS_INLINE float he3d_atan2f(float y, float x) {
-#if HE3D_HAS_BUILTINS
-    return __builtin_atan2f(y, x);
-#else
     float ax = he3d_fabsf(x);
     if (ax < 0.000001f)
         return (y > 0.0f) ? 1.57079632679f : -1.57079632679f;
@@ -208,7 +174,6 @@ HE3D_ALWAYS_INLINE float he3d_atan2f(float y, float x) {
     if (inv) at = (z > 0.0f ? 1.57079632679f : -1.57079632679f) - at;
     if (x < 0.0f) at += (y >= 0.0f) ? 3.141592653589793f : -3.141592653589793f;
     return at;
-#endif
 }
 
 // ============================================================================
