@@ -50,7 +50,7 @@ static float FlightTerrainHeight(float x, float z)
     return large + small;
 }
 
-Mesh *CreateTerrainTileMesh(int gridCount, float step, float worldX, float worldZ)
+Mesh *CreatePlane(int gridCount, float step, float worldX, float worldZ)
 {
     int triCount  = (gridCount - 1) * (gridCount - 1) * 2;
     int vertCount = triCount * 3;

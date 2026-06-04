@@ -92,9 +92,10 @@ int main(int argc, char** argv, char** envp) {
     bool dirty = true;
 
     // ---- Lighting ----
-    eng.mainLight.direction = {0.57735f, 0.57735f, 0.57735f};
-    eng.mainLight.color     = {1.5f, 1.4f, 1.2f};
-    eng.mainLight.ambient   = 0.15f;
+    DirectionalLight sun;
+    sun.direction = {1.0f, 1.0f, 0.5f};
+    sun.color     = {1.5f, 1.4f, 1.2f};
+    eng.SetMainLight(sun);
 
     // ---- Input ----
     float iP = 0, iY = 0, iR = 0;
@@ -116,6 +117,8 @@ int main(int argc, char** argv, char** envp) {
                  + (float)(now.tv_nsec - lt.tv_nsec) * 0.000000001f;
         lt = now;
         if (dt > 0.1f) dt = 0.1f;
+
+        cam.Update(dt);
 
         // Input
         float cP = InputCurve(iP, keys['W']||keys['w'], keys['S']||keys['s'], dt, ACC, REC);
@@ -173,7 +176,7 @@ int main(int argc, char** argv, char** envp) {
                         tiles[i].gx = need[j].x; tiles[i].gz = need[j].z;
                         tiles[i].active = true;
                         float wx = tiles[i].gx * TS, wz = tiles[i].gz * TS;
-                        tiles[i].obj.mesh = CreateTerrainTileMesh(GC, GS, wx, wz);
+                        tiles[i].obj.mesh = CreatePlane(GC, GS, wx, wz);
                         tiles[i].obj.position = {wx, 0, wz};
                         need[j].done = true;
                         break;

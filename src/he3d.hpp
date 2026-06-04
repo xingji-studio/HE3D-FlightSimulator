@@ -19,11 +19,9 @@ void  operator delete[](void *p) noexcept;
 // DirectionalLight
 // ============================================================================
 struct DirectionalLight {
-    float3 direction;
-    float3 color;
-    float  ambient;
-    DirectionalLight() : direction{0.57735f, 0.57735f, 0.57735f},
-                         color{1.0f, 1.0f, 1.0f}, ambient(0.15f) {}
+    float3 direction = {0, -1, 1};
+    float3 color     = {1, 1, 1};
+    float  ambient   = 0.15f;
 };
 
 // ============================================================================
@@ -94,9 +92,15 @@ class Camera {
 public:
     float3 position;
     quat   orientation;
-    float  fov;
+    float  fov       = 90.0f;
+    float  targetFov = 90.0f;
+    float  zoomSpeed = 0.2f;
 
-    Camera() : position{0, 0, 5}, orientation{1,0,0,0}, fov(90.0f) {}
+    Camera() : position{0, 0, 5}, orientation{1,0,0,0} {}
+
+    void Update(float deltaTime) {
+        fov += (targetFov - fov) * zoomSpeed;
+    }
 };
 
 // ============================================================================
@@ -114,6 +118,7 @@ public:
     void DrawGameObject(const GameObject& obj, const Camera& cam, const Texture& tex);
     void Present();
     void Resize(int w, int h);
+    void SetMainLight(const DirectionalLight& light) { mainLight = light; }
 
 private:
     int     m_width;

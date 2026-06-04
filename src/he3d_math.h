@@ -231,8 +231,7 @@ static const float HE3D_PI_DIV_2 = 1.57079632679489661923f;
 struct float2 {
     float x, y;
 
-    HE3D_MEMBER_INLINE float2() : x(0), y(0) {}
-    HE3D_MEMBER_INLINE float2(float _x, float _y) : x(_x), y(_y) {}
+    HE3D_MEMBER_INLINE float2(float _x = 0, float _y = 0) : x(_x), y(_y) {}
 
     HE3D_MEMBER_INLINE float2 operator+(const float2& v) const { return {x + v.x, y + v.y}; }
     HE3D_MEMBER_INLINE float2 operator-(const float2& v) const { return {x - v.x, y - v.y}; }
@@ -250,8 +249,7 @@ struct float3 {
         struct { float r, g, b; };
     };
 
-    HE3D_MEMBER_INLINE float3() : x(0), y(0), z(0) {}
-    HE3D_MEMBER_INLINE float3(float _x, float _y, float _z) : x(_x), y(_y), z(_z) {}
+    HE3D_MEMBER_INLINE float3(float _x = 0, float _y = 0, float _z = 0) : x(_x), y(_y), z(_z) {}
 
     // ---- Arithmetic operators ----
     HE3D_MEMBER_INLINE float3 operator+(const float3& v) const { return {x + v.x, y + v.y, z + v.z}; }
@@ -326,8 +324,7 @@ struct float3 {
 struct quat {
     float w, x, y, z;
 
-    HE3D_MEMBER_INLINE quat() : w(1), x(0), y(0), z(0) {}
-    HE3D_MEMBER_INLINE quat(float _w, float _x, float _y, float _z)
+    HE3D_MEMBER_INLINE quat(float _w = 1, float _x = 0, float _y = 0, float _z = 0)
         : w(_w), x(_x), y(_y), z(_z) {}
 
     // ---- Construct from Euler angles (radians) ----
