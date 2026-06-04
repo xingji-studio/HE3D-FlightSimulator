@@ -40,7 +40,7 @@ The main build uses the XJ380 XACT `xxcc` compiler and C++11:
 make
 ```
 
-Ensure `xxcc` is available in your `PATH` before running `make`.
+Ensure `xxcc` is available in your `PATH` before running `make`. Users must provide or build the XJ380 `obj-gui` and `obj-tui` runtime objects themselves.
 
 ## Clean
 
