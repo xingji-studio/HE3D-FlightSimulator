@@ -1,5 +1,7 @@
 # HE3D Flight Simulator
 
+[中文](README.zh-CN.md)
+
 HE3D Flight Simulator is a C++11 software-rendered 3D flight demo for the XJ380/XACT platform. It uses the XJ380 window and file APIs directly, without the C++ standard library runtime or BridgeEngine in the current `src/` implementation.
 
 ## Features
