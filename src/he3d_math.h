@@ -33,6 +33,7 @@
 #endif
 
 #define HE3D_ALWAYS_INLINE static inline __attribute__((always_inline))
+#define HE3D_MEMBER_INLINE inline __attribute__((always_inline))
 #define HE3D_LIKELY(x)   __builtin_expect(!!(x), 1)
 #define HE3D_UNLIKELY(x) __builtin_expect(!!(x), 0)
 
@@ -230,14 +231,14 @@ static const float HE3D_PI_DIV_2 = 1.57079632679489661923f;
 struct float2 {
     float x, y;
 
-    HE3D_ALWAYS_INLINE float2() : x(0), y(0) {}
-    HE3D_ALWAYS_INLINE float2(float _x, float _y) : x(_x), y(_y) {}
+    HE3D_MEMBER_INLINE float2() : x(0), y(0) {}
+    HE3D_MEMBER_INLINE float2(float _x, float _y) : x(_x), y(_y) {}
 
-    HE3D_ALWAYS_INLINE float2 operator+(const float2& v) const { return {x + v.x, y + v.y}; }
-    HE3D_ALWAYS_INLINE float2 operator-(const float2& v) const { return {x - v.x, y - v.y}; }
-    HE3D_ALWAYS_INLINE float2 operator*(float s)      const { return {x * s, y * s}; }
-    HE3D_ALWAYS_INLINE float2 operator*(const float2& v) const { return {x * v.x, y * v.y}; }
-    HE3D_ALWAYS_INLINE float2 operator/(float s)      const { float inv = 1.0f/s; return {x * inv, y * inv}; }
+    HE3D_MEMBER_INLINE float2 operator+(const float2& v) const { return {x + v.x, y + v.y}; }
+    HE3D_MEMBER_INLINE float2 operator-(const float2& v) const { return {x - v.x, y - v.y}; }
+    HE3D_MEMBER_INLINE float2 operator*(float s)      const { return {x * s, y * s}; }
+    HE3D_MEMBER_INLINE float2 operator*(const float2& v) const { return {x * v.x, y * v.y}; }
+    HE3D_MEMBER_INLINE float2 operator/(float s)      const { float inv = 1.0f/s; return {x * inv, y * inv}; }
 };
 
 // ============================================================================
@@ -249,23 +250,23 @@ struct float3 {
         struct { float r, g, b; };
     };
 
-    HE3D_ALWAYS_INLINE float3() : x(0), y(0), z(0) {}
-    HE3D_ALWAYS_INLINE float3(float _x, float _y, float _z) : x(_x), y(_y), z(_z) {}
+    HE3D_MEMBER_INLINE float3() : x(0), y(0), z(0) {}
+    HE3D_MEMBER_INLINE float3(float _x, float _y, float _z) : x(_x), y(_y), z(_z) {}
 
     // ---- Arithmetic operators ----
-    HE3D_ALWAYS_INLINE float3 operator+(const float3& v) const { return {x + v.x, y + v.y, z + v.z}; }
-    HE3D_ALWAYS_INLINE float3 operator-(const float3& v) const { return {x - v.x, y - v.y, z - v.z}; }
-    HE3D_ALWAYS_INLINE float3 operator*(float s)        const { return {x * s, y * s, z * s}; }
-    HE3D_ALWAYS_INLINE float3 operator*(const float3& v) const { return {x * v.x, y * v.y, z * v.z}; }
-    HE3D_ALWAYS_INLINE float3 operator/(float s)        const { float inv = 1.0f/s; return {x * inv, y * inv, z * inv}; }
-    HE3D_ALWAYS_INLINE float3 operator-()               const { return {-x, -y, -z}; }
+    HE3D_MEMBER_INLINE float3 operator+(const float3& v) const { return {x + v.x, y + v.y, z + v.z}; }
+    HE3D_MEMBER_INLINE float3 operator-(const float3& v) const { return {x - v.x, y - v.y, z - v.z}; }
+    HE3D_MEMBER_INLINE float3 operator*(float s)        const { return {x * s, y * s, z * s}; }
+    HE3D_MEMBER_INLINE float3 operator*(const float3& v) const { return {x * v.x, y * v.y, z * v.z}; }
+    HE3D_MEMBER_INLINE float3 operator/(float s)        const { float inv = 1.0f/s; return {x * inv, y * inv, z * inv}; }
+    HE3D_MEMBER_INLINE float3 operator-()               const { return {-x, -y, -z}; }
 
     // ---- Geometry ----
-    HE3D_ALWAYS_INLINE float lengthSq() const { return x*x + y*y + z*z; }
-    HE3D_ALWAYS_INLINE float length()   const { return he3d_sqrtf(lengthSq()); }
+    HE3D_MEMBER_INLINE float lengthSq() const { return x*x + y*y + z*z; }
+    HE3D_MEMBER_INLINE float length()   const { return he3d_sqrtf(lengthSq()); }
 
     // Standard normalize: sqrt + divide
-    HE3D_ALWAYS_INLINE float3 normalize() const {
+    HE3D_MEMBER_INLINE float3 normalize() const {
         float lsq = lengthSq();
         if (HE3D_UNLIKELY(lsq < 0.0000001f)) return {0,0,0};
         return (*this) * (1.0f / he3d_sqrtf(lsq));
@@ -274,17 +275,17 @@ struct float3 {
     // Fast normalize: uses fast inverse sqrt (rsqrt). Same 0.5 ULP accuracy.
     // Use in hot paths (lighting, camera transforms) where sub-ULP precision
     // is not required.
-    HE3D_ALWAYS_INLINE float3 normalizeFast() const {
+    HE3D_MEMBER_INLINE float3 normalizeFast() const {
         float lsq = lengthSq();
         if (HE3D_UNLIKELY(lsq < 0.0000001f)) return {0,0,0};
         return (*this) * he3d_rsqrtf(lsq);
     }
 
-    HE3D_ALWAYS_INLINE static float  dot(const float3& a, const float3& b) {
+    HE3D_MEMBER_INLINE static float  dot(const float3& a, const float3& b) {
         return a.x*b.x + a.y*b.y + a.z*b.z;
     }
 
-    HE3D_ALWAYS_INLINE static float3 cross(const float3& a, const float3& b) {
+    HE3D_MEMBER_INLINE static float3 cross(const float3& a, const float3& b) {
         return {
             a.y*b.z - a.z*b.y,
             a.z*b.x - a.x*b.z,
@@ -292,29 +293,29 @@ struct float3 {
         };
     }
 
-    HE3D_ALWAYS_INLINE static float3 lerp(const float3& a, const float3& b, float t) {
+    HE3D_MEMBER_INLINE static float3 lerp(const float3& a, const float3& b, float t) {
         return {a.x + (b.x - a.x)*t, a.y + (b.y - a.y)*t, a.z + (b.z - a.z)*t};
     }
 
     // ---- Rotations around axes (Euler) — precomputed sin/cos caller ----
-    HE3D_ALWAYS_INLINE float3 rotateY(float s, float c) const {
+    HE3D_MEMBER_INLINE float3 rotateY(float s, float c) const {
         return {x * c + z * s, y, -x * s + z * c};
     }
-    HE3D_ALWAYS_INLINE float3 rotateX(float s, float c) const {
+    HE3D_MEMBER_INLINE float3 rotateX(float s, float c) const {
         return {x, y * c - z * s, y * s + z * c};
     }
-    HE3D_ALWAYS_INLINE float3 rotateZ(float s, float c) const {
+    HE3D_MEMBER_INLINE float3 rotateZ(float s, float c) const {
         return {x * c - y * s, x * s + y * c, z};
     }
 
     // ---- Legacy Euler rotation (compute sin/cos internally) ----
-    HE3D_ALWAYS_INLINE float3 rotateY(float angle) const {
+    HE3D_MEMBER_INLINE float3 rotateY(float angle) const {
         float s, c; he3d_sincosf(angle, &s, &c); return rotateY(s, c);
     }
-    HE3D_ALWAYS_INLINE float3 rotateX(float angle) const {
+    HE3D_MEMBER_INLINE float3 rotateX(float angle) const {
         float s, c; he3d_sincosf(angle, &s, &c); return rotateX(s, c);
     }
-    HE3D_ALWAYS_INLINE float3 rotateZ(float angle) const {
+    HE3D_MEMBER_INLINE float3 rotateZ(float angle) const {
         float s, c; he3d_sincosf(angle, &s, &c); return rotateZ(s, c);
     }
 };
@@ -325,14 +326,14 @@ struct float3 {
 struct quat {
     float w, x, y, z;
 
-    HE3D_ALWAYS_INLINE quat() : w(1), x(0), y(0), z(0) {}
-    HE3D_ALWAYS_INLINE quat(float _w, float _x, float _y, float _z)
+    HE3D_MEMBER_INLINE quat() : w(1), x(0), y(0), z(0) {}
+    HE3D_MEMBER_INLINE quat(float _w, float _x, float _y, float _z)
         : w(_w), x(_x), y(_y), z(_z) {}
 
     // ---- Construct from Euler angles (radians) ----
     // Pitch=X, Yaw=Y, Roll=Z.
     // Uses he3d_sincosf to compute sin+cos in one call, halving trig work.
-    HE3D_ALWAYS_INLINE static quat FromEuler(float3 euler) {
+    HE3D_MEMBER_INLINE static quat FromEuler(float3 euler) {
         float sy, cy, sp, cp, sr, cr;
         he3d_sincosf(euler.y * 0.5f, &sy, &cy); // Yaw
         he3d_sincosf(euler.x * 0.5f, &sp, &cp); // Pitch
@@ -346,7 +347,7 @@ struct quat {
     }
 
     // ---- Fast Euler construction (uses fast trig for non-critical paths) ----
-    HE3D_ALWAYS_INLINE static quat FromEulerFast(float3 euler) {
+    HE3D_MEMBER_INLINE static quat FromEulerFast(float3 euler) {
         float sy = he3d_sinf(euler.y * 0.5f), cy = he3d_cosf(euler.y * 0.5f);
         float sp = he3d_sinf(euler.x * 0.5f), cp = he3d_cosf(euler.x * 0.5f);
         float sr = he3d_sinf(euler.z * 0.5f), cr = he3d_cosf(euler.z * 0.5f);
@@ -360,7 +361,7 @@ struct quat {
 
     // ---- Normalize to prevent floating-point drift ----
     // Standard normalize with sqrt.
-    HE3D_ALWAYS_INLINE quat normalize() const {
+    HE3D_MEMBER_INLINE quat normalize() const {
         float mag = w*w + x*x + y*y + z*z;
         if (HE3D_UNLIKELY(mag < 0.0000001f)) return {1,0,0,0};
         float inv = 1.0f / he3d_sqrtf(mag);
@@ -368,7 +369,7 @@ struct quat {
     }
 
     // Fast normalize using rsqrt. Use when sub-ULP precision isn't critical.
-    HE3D_ALWAYS_INLINE quat normalizeFast() const {
+    HE3D_MEMBER_INLINE quat normalizeFast() const {
         float mag = w*w + x*x + y*y + z*z;
         if (HE3D_UNLIKELY(mag < 0.0000001f)) return {1,0,0,0};
         float inv = he3d_rsqrtf(mag);
@@ -376,7 +377,7 @@ struct quat {
     }
 
     // ---- Quaternion multiplication (rotation composition) ----
-    HE3D_ALWAYS_INLINE quat operator*(const quat& q) const {
+    HE3D_MEMBER_INLINE quat operator*(const quat& q) const {
         return {
             w*q.w - x*q.x - y*q.y - z*q.z,
             w*q.x + x*q.w + y*q.z - z*q.y,
@@ -388,7 +389,7 @@ struct quat {
     // ---- Rotate a 3D vector by this quaternion ----
     // Optimized: v' = v + 2w*(qv x v) + 2*(qv x (qv x v))
     // Precomputes 2w to save a multiply on the critical path.
-    HE3D_ALWAYS_INLINE float3 rotate(const float3& v) const {
+    HE3D_MEMBER_INLINE float3 rotate(const float3& v) const {
         float3 qv     = {x, y, z};
         float  twoW   = 2.0f * w;
         float3 cross1 = float3::cross(qv, v);
@@ -401,7 +402,7 @@ struct quat {
     }
 
     // ---- Inverse (conjugate for unit quaternions, used in camera) ----
-    HE3D_ALWAYS_INLINE quat inverse() const { return {w, -x, -y, -z}; }
+    HE3D_MEMBER_INLINE quat inverse() const { return {w, -x, -y, -z}; }
 };
 
 // ============================================================================
@@ -410,7 +411,7 @@ struct quat {
 struct float4x4 {
     float m[16];
 
-    HE3D_ALWAYS_INLINE float4x4() {
+    HE3D_MEMBER_INLINE float4x4() {
         for (int i = 0; i < 16; i++) m[i] = 0.0f;
         m[0] = m[5] = m[10] = m[15] = 1.0f;
     }
