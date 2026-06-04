@@ -68,6 +68,13 @@ HE3D_ALWAYS_INLINE float he3d_roundf(float x) {
     return he3d_floorf(x + 0.5f);
 }
 
+// Fractional part — branchless texture coordinate wrap
+HE3D_ALWAYS_INLINE float he3d_fracf(float x) {
+    float xi = (float)(int)x;
+    float frac = x - xi;
+    return frac < 0.0f ? frac + 1.0f : frac;
+}
+
 // ============================================================================
 // [2] sqrt — hardware builtin or Newton with bit-manipulation seed
 // ============================================================================

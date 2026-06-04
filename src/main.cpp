@@ -40,8 +40,12 @@ static float InputCurve(float& cur, bool pos, bool neg, float dt, float acc, flo
 }
 
 static float NormAngle(float a) {
-    while (a >  HE3D_PI) a -= HE3D_TAU;
-    while (a < -HE3D_PI) a += HE3D_TAU;
+    // Single fmod-style wrap instead of iterative while loops
+    if (a > HE3D_PI || a < -HE3D_PI) {
+        a -= (int)(a * 0.159154943f) * HE3D_TAU;  // 1/TAU ≈ 0.159154943
+        if (a >  HE3D_PI) a -= HE3D_TAU;
+        if (a < -HE3D_PI) a += HE3D_TAU;
+    }
     return a;
 }
 

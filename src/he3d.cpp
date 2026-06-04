@@ -321,11 +321,10 @@ Mesh *Mesh::LoadOBJ(const char *filename)
 // ============================================================================
 float3 Texture::Sample(float u, float v) const {
     if (!valid || !pixels) return {1.0f, 0.0f, 1.0f};
-    u -= (int)u; if (u < 0) u += 1.0f;
-    v -= (int)v; if (v < 0) v += 1.0f;
-    int x = (int)(u * width), y = (int)(v * height);
-    if (x < 0) x = 0; if (x >= width)  x = width  - 1;
-    if (y < 0) y = 0; if (y >= height) y = height - 1;
+    u = he3d_fracf(u);
+    v = he3d_fracf(v);
+    int x = HE3D_CLAMP((int)(u * width),  0, width  - 1);
+    int y = HE3D_CLAMP((int)(v * height), 0, height - 1);
     return pixels[y * width + x];
 }
 
@@ -473,8 +472,11 @@ void Renderer::Clear(float3 color) {
     c.Blue  = (UINT8)HE3D_CLAMP((int)(color.b * 255.0f), 0, 255);
 
     int total = m_width * m_height;
-    for (int i = 0; i < total; i++) m_colorBuf[i] = c;
-    for (int i = 0; i < total; i++) m_depthBuf[i] = 10000.0f;
+    // Single merged loop: interleave color+depth writes for cache locality
+    for (int i = 0; i < total; i++) {
+        m_colorBuf[i] = c;
+        m_depthBuf[i] = 10000.0f;
+    }
 }
 
 // ============================================================================
@@ -485,11 +487,14 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, float3 c
     if (!obj.mesh || obj.mesh->vertCount < 3) return;
     if (!obj.mesh->vertices || !obj.mesh->uvs) return;
 
-    float fovRad   = cam.fov * 0.01745329252f;
-    float fovScale = 1.0f / he3d_tanf(fovRad * 0.5f);
-    float aspect   = (float)m_width / (float)m_height;
+    float fovRad    = cam.fov * 0.01745329252f;
+    float fovScale  = 1.0f / he3d_tanf(fovRad * 0.5f);
+    float halfW     = m_width  * 0.5f;
+    float halfH     = m_height * 0.5f;
+    float scaleX    = fovScale * halfW / ((float)m_width / (float)m_height);
+    float scaleY    = fovScale * halfH;
     float3 lightDir = mainLight.direction.normalizeFast();
-    quat camInv    = cam.orientation.inverse();
+    quat  camInv    = cam.orientation.inverse();
 
     float3* verts = obj.mesh->vertices;
     int vc = obj.mesh->vertCount;
@@ -505,9 +510,9 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, float3 c
             v = camInv.rotate(v - cam.position);
             vv[j] = v;
             if (v.z <= 0.1f) { cull = true; break; }
-            float px = (v.x / v.z) * fovScale / aspect;
-            float py = (v.y / v.z) * fovScale;
-            ps[j] = {(px + 1.0f) * 0.5f * m_width, (1.0f - (py + 1.0f) * 0.5f) * m_height};
+            float invZ = 1.0f / v.z;
+            ps[j] = {halfW + v.x * invZ * scaleX,
+                     halfH - v.y * invZ * scaleY};
         }
         if (cull) continue;
 
@@ -533,11 +538,14 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, const Te
     if (!obj.mesh->vertices || !obj.mesh->uvs) return;
     if (!tex.valid) { DrawGameObject(obj, cam, {0.8f, 0.8f, 0.8f}); return; }
 
-    float fovRad   = cam.fov * 0.01745329252f;
-    float fovScale = 1.0f / he3d_tanf(fovRad * 0.5f);
-    float aspect   = (float)m_width / (float)m_height;
+    float fovRad    = cam.fov * 0.01745329252f;
+    float fovScale  = 1.0f / he3d_tanf(fovRad * 0.5f);
+    float halfW     = m_width  * 0.5f;
+    float halfH     = m_height * 0.5f;
+    float scaleX    = fovScale * halfW / ((float)m_width / (float)m_height);
+    float scaleY    = fovScale * halfH;
     float3 lightDir = mainLight.direction.normalizeFast();
-    quat camInv    = cam.orientation.inverse();
+    quat  camInv    = cam.orientation.inverse();
 
     float3* verts = obj.mesh->vertices;
     float2* uvs   = obj.mesh->uvs;
@@ -555,9 +563,9 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, const Te
             v = camInv.rotate(v - cam.position);
             vv[j] = v;
             if (v.z <= 0.1f) { cull = true; break; }
-            float px = (v.x / v.z) * fovScale / aspect;
-            float py = (v.y / v.z) * fovScale;
-            ps[j] = {(px + 1.0f) * 0.5f * m_width, (1.0f - (py + 1.0f) * 0.5f) * m_height};
+            float invZ = 1.0f / v.z;
+            ps[j] = {halfW + v.x * invZ * scaleX,
+                     halfH - v.y * invZ * scaleY};
         }
         if (cull) continue;
 
@@ -598,19 +606,23 @@ void Renderer::RasterizeSolid(const float3* vv, const float2* ps, float3 color) 
     float dw1 = (y2 - y0) * invA;
     float iz0 = 1.0f / vv[0].z, iz1 = 1.0f / vv[1].z, iz2 = 1.0f / vv[2].z;
 
+    // Pre-clamp color once, set fields by name for clarity
     XCOLOR xc;
     xc.Red   = (UINT8)HE3D_CLAMP((int)(color.r * 255.0f), 0, 255);
     xc.Green = (UINT8)HE3D_CLAMP((int)(color.g * 255.0f), 0, 255);
     xc.Blue  = (UINT8)HE3D_CLAMP((int)(color.b * 255.0f), 0, 255);
 
     int stride = m_width;
+    // idx = y*m_width + x is always in [0, m_width*m_height-1]
+    // because mnX/mnY/mxX/mxY are clamped to valid range.
+    float *db = m_depthBuf;
+    XCOLOR *cbuf = m_colorBuf;
 
     for (int y = mnY; y <= mxY; y++) {
         float py = (float)y + 0.5f, px0 = (float)mnX + 0.5f;
         float w0 = ((x1 - px0) * (y2 - py) - (y1 - py) * (x2 - px0)) * invA;
         float w1 = ((x2 - px0) * (y0 - py) - (y2 - py) * (x0 - px0)) * invA;
 
-        int maxIdx = m_width * m_height - 1;
         int rb = y * stride;
         for (int x = mnX; x <= mxX; x++) {
             float w2 = 1.0f - w0 - w1;
@@ -619,9 +631,9 @@ void Renderer::RasterizeSolid(const float3* vv, const float2* ps, float3 color) 
                 if (ciz > 0.000001f) {
                     float z = 1.0f / ciz;
                     int idx = rb + x;
-                    if (idx >= 0 && idx <= maxIdx && z < m_depthBuf[idx]) {
-                        m_depthBuf[idx] = z;
-                        m_colorBuf[idx] = xc;
+                    if (z < db[idx]) {
+                        db[idx] = z;
+                        cbuf[idx] = xc;
                     }
                 }
             }
@@ -659,16 +671,21 @@ void Renderer::RasterizeTextured(const float3* vv, const float2* ps,
     float2 uz0 = uvs[0] * iz0, uz1 = uvs[1] * iz1, uz2 = uvs[2] * iz2;
 
     float3 lc = mainLight.color * intens;
-    float3* tp = tex.pixels;
-    int   tw = tex.width, th = tex.height;
-    int stride = m_width;
+    float3* tp  = tex.pixels;
+    int     tw  = tex.width;
+    int     th  = tex.height;
+    int     twm1 = tw - 1;
+    int     thm1 = th - 1;
+    int     stride = m_width;
+
+    float  *db   = m_depthBuf;
+    XCOLOR *cbuf = m_colorBuf;
 
     for (int y = mnY; y <= mxY; y++) {
         float py = (float)y + 0.5f, px0 = (float)mnX + 0.5f;
         float w0 = ((x1 - px0) * (y2 - py) - (y1 - py) * (x2 - px0)) * invA;
         float w1 = ((x2 - px0) * (y0 - py) - (y2 - py) * (x0 - px0)) * invA;
 
-        int maxIdx = m_width * m_height - 1;
         int rb = y * stride;
         for (int x = mnX; x <= mxX; x++) {
             float w2 = 1.0f - w0 - w1;
@@ -677,19 +694,19 @@ void Renderer::RasterizeTextured(const float3* vv, const float2* ps,
                 if (ciz > 0.000001f) {
                     float z = 1.0f / ciz;
                     int idx = rb + x;
-                    if (idx >= 0 && idx <= maxIdx && z < m_depthBuf[idx]) {
-                        m_depthBuf[idx] = z;
-                        float u = (w0 * uz0.x + w1 * uz1.x + w2 * uz2.x) * z;
-                        float v = (w0 * uz0.y + w1 * uz1.y + w2 * uz2.y) * z;
-                        u -= (int)u; if (u < 0) u += 1.0f;
-                        v -= (int)v; if (v < 0) v += 1.0f;
-                        int tx = (int)(u * tw), ty = (int)(v * th);
-                        if (tx < 0) tx = 0; if (tx >= tw) tx = tw - 1;
-                        if (ty < 0) ty = 0; if (ty >= th) ty = th - 1;
+                    if (z < db[idx]) {
+                        db[idx] = z;
+                        // Perspective-correct UV with branchless fractional wrap
+                        float u = he3d_fracf((w0 * uz0.x + w1 * uz1.x + w2 * uz2.x) * z);
+                        float v = he3d_fracf((w0 * uz0.y + w1 * uz1.y + w2 * uz2.y) * z);
+                        int tx = (int)(u * tw);
+                        int ty = (int)(v * th);
+                        tx = HE3D_CLAMP(tx, 0, twm1);
+                        ty = HE3D_CLAMP(ty, 0, thm1);
                         float3 tl = tp[ty * tw + tx] * lc;
-                        m_colorBuf[idx].Red   = (UINT8)HE3D_CLAMP((int)(tl.r * 255.0f), 0, 255);
-                        m_colorBuf[idx].Green = (UINT8)HE3D_CLAMP((int)(tl.g * 255.0f), 0, 255);
-                        m_colorBuf[idx].Blue  = (UINT8)HE3D_CLAMP((int)(tl.b * 255.0f), 0, 255);
+                        cbuf[idx].Red   = (UINT8)HE3D_CLAMP((int)(tl.r * 255.0f), 0, 255);
+                        cbuf[idx].Green = (UINT8)HE3D_CLAMP((int)(tl.g * 255.0f), 0, 255);
+                        cbuf[idx].Blue  = (UINT8)HE3D_CLAMP((int)(tl.b * 255.0f), 0, 255);
                     }
                 }
             }
