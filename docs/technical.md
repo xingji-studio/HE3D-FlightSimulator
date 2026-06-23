@@ -22,8 +22,8 @@ cmake --build build
 
 - `XAPI`: builds `he3d_flight_simulator.elf` for XJ380.
 - `SDL3`: builds `he3d_flight_simulator_sdl3` for desktop SDL3.
-- `CONSOLE`: builds `he3d_console_demo`, a standard C++ tutorial backend that
-  presents pixels in a terminal.
+- `CONSOLE`: builds `he3d_flight_simulator_console`, using the console backend
+  to present the flight simulator in a terminal.
 
 Generated executables and copied assets are placed in `build/`. Reconfigure the
 same `build/` directory when switching backend.
@@ -232,18 +232,19 @@ returned by `CreateWindow` must be released with `DestroyWindow`.
 A backend is one translation unit that provides a `Platform` table and, when it
 is the built-in backend for a target, defines `HE3D::GetBuiltinPlatform()`.
 
-The repository includes a complete tutorial backend in
+The repository includes a complete console backend in
 `src/platform/he3d_platform_console.cpp`. It uses the C++ standard library for
 allocation, files, time, and terminal output. It presents the renderer buffer
 with ANSI 24-bit color and the upper-half block character: the foreground color
-is the top pixel and the background color is the pixel below it.
+is the top sampled pixel and the background color is the sampled pixel below it.
+The backend scales the framebuffer to a terminal-sized view before writing it.
 
 Build and run it with:
 
 ```sh
 cmake -S . -B build -DHE3D_BACKEND=CONSOLE
 cmake --build build
-./build/he3d_console_demo
+./build/he3d_flight_simulator_console
 ```
 
 There are two supported ways to use a custom backend:
@@ -372,19 +373,20 @@ target_include_directories(he3d_engine_console
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_executable(he3d_console_demo
-    examples/ConsoleBackend/main.cpp
+add_executable(he3d_flight_simulator_console
+    ${HE3D_FLIGHT_SOURCES}
 )
 
-target_link_libraries(he3d_console_demo
+target_link_libraries(he3d_flight_simulator_console
     PRIVATE
         he3d_engine_console
 )
 ```
 
-`examples/ConsoleBackend/main.cpp` uses the backend like any other HE3D target:
-it fills a `WindowDesc`, calls `CreateWindow`, constructs a `Renderer` with the
-returned `Window *`, draws, presents, and finally calls `DestroyWindow`.
+The console target uses the same flight simulator sources as the SDL3 and XAPI
+targets. The application still fills a `WindowDesc`, calls `CreateWindow`,
+constructs a `Renderer` with the returned `Window *`, draws, presents, and
+finally calls `DestroyWindow`.
 
 ## Engine API
 

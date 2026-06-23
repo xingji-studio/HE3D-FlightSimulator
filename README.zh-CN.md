@@ -20,12 +20,12 @@ cmake -S . -B build -DHE3D_BACKEND=SDL3
 cmake --build build
 ```
 
-控制台后端教程：
+控制台：
 
 ```sh
 cmake -S . -B build -DHE3D_BACKEND=CONSOLE
 cmake --build build
-./build/he3d_console_demo
+./build/he3d_flight_simulator_console
 ```
 
 可执行文件和资源文件会生成到 `build/`。
@@ -42,6 +42,5 @@ cmake --build build
 - `include/`：引擎公开头文件
 - `src/`：渲染器、加载器和平台后端
 - `examples/FlightSimulator/`：飞行模拟器示例
-- `examples/ConsoleBackend/`：控制台后端教程程序
 - `xj380/include/`：XAPI 构建使用的 XJ380 头文件
 - `docs/technical.zh-CN.md`：技术手册和 API 参考

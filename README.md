@@ -21,12 +21,12 @@ cmake -S . -B build -DHE3D_BACKEND=SDL3
 cmake --build build
 ```
 
-Console backend tutorial:
+Console:
 
 ```sh
 cmake -S . -B build -DHE3D_BACKEND=CONSOLE
 cmake --build build
-./build/he3d_console_demo
+./build/he3d_flight_simulator_console
 ```
 
 The executable and copied assets are written to `build/`.
@@ -43,6 +43,5 @@ The executable and copied assets are written to `build/`.
 - `include/`: public engine headers
 - `src/`: renderer, loaders, and platform backends
 - `examples/FlightSimulator/`: flight simulator sample
-- `examples/ConsoleBackend/`: console backend tutorial program
 - `xj380/include/`: XJ380 headers for the XAPI build
 - `docs/technical.md`: technical manual and API reference

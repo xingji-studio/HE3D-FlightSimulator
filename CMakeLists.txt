@@ -209,12 +209,26 @@ if(HE3D_BACKEND STREQUAL "CONSOLE")
             $<$<CONFIG:Debug>:-g>
     )
 
-    add_executable(he3d_console_demo
-        examples/ConsoleBackend/main.cpp
+    add_executable(he3d_flight_simulator_console
+        ${HE3D_FLIGHT_SOURCES}
     )
 
-    target_link_libraries(he3d_console_demo
+    target_include_directories(he3d_flight_simulator_console
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/examples/FlightSimulator/src
+    )
+
+    target_compile_options(he3d_flight_simulator_console
+        PRIVATE
+            $<$<CONFIG:Release>:-O2>
+            $<$<CONFIG:Debug>:-O0>
+            $<$<CONFIG:Debug>:-g>
+    )
+
+    target_link_libraries(he3d_flight_simulator_console
         PRIVATE
             he3d_engine_console
     )
+
+    he3d_copy_flight_assets(he3d_flight_simulator_console)
 endif()

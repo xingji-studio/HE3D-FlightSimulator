@@ -11,6 +11,8 @@ namespace HE3D {
 struct Window {
     int width;
     int height;
+    int presentColumns;
+    int presentRows;
     std::string title;
     KeyCallback keyCallback;
     void *keyUser;
@@ -100,6 +102,16 @@ static Window *ConsoleCreateWindow(const WindowDesc *desc)
 
     window->width = desc->width;
     window->height = desc->height;
+    window->presentColumns = desc->width < 80 ? desc->width : 80;
+    window->presentRows = ((desc->height + 1) / 2) < 30 ? ((desc->height + 1) / 2) : 30;
+    if (window->presentColumns <= 0)
+    {
+        window->presentColumns = 1;
+    }
+    if (window->presentRows <= 0)
+    {
+        window->presentRows = 1;
+    }
     window->title = desc->title ? desc->title : "";
     window->keyCallback = nullptr;
     window->keyUser = nullptr;
@@ -192,15 +204,36 @@ static void ConsolePresent(Window *window, int width, int height, const ColorA *
     }
 
     const ColorA black = {0, 0, 0, 255};
+    int outColumns = window->presentColumns;
+    int outRows = window->presentRows;
+    int sampleHeight = outRows * 2;
+
     std::cout << "\033[H";
-    for (int y = 0; y < height; y += 2)
+    for (int y = 0; y < outRows; y++)
     {
-        const ColorA *topRow = pixels + y * width;
-        const ColorA *bottomRow = (y + 1 < height) ? pixels + (y + 1) * width : nullptr;
-        for (int x = 0; x < width; x++)
+        int srcTopY = ((y * 2) * height) / sampleHeight;
+        int srcBottomY = ((y * 2 + 1) * height) / sampleHeight;
+        if (srcTopY >= height)
         {
-            const ColorA& top = topRow[x];
-            const ColorA& bottom = bottomRow ? bottomRow[x] : black;
+            srcTopY = height - 1;
+        }
+        if (srcBottomY >= height)
+        {
+            srcBottomY = height - 1;
+        }
+
+        const ColorA *topRow = pixels + srcTopY * width;
+        const ColorA *bottomRow = srcBottomY >= 0 ? pixels + srcBottomY * width : nullptr;
+        for (int x = 0; x < outColumns; x++)
+        {
+            int srcX = (x * width) / outColumns;
+            if (srcX >= width)
+            {
+                srcX = width - 1;
+            }
+
+            const ColorA& top = topRow[srcX];
+            const ColorA& bottom = bottomRow ? bottomRow[srcX] : black;
             WriteFg(top);
             WriteBg(bottom);
             std::cout << "\xE2\x96\x80";

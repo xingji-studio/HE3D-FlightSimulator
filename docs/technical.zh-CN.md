@@ -20,7 +20,7 @@ cmake --build build
 
 - `XAPI`：构建 XJ380 程序 `he3d_flight_simulator.elf`。
 - `SDL3`：构建桌面 SDL3 程序 `he3d_flight_simulator_sdl3`。
-- `CONSOLE`：构建 `he3d_console_demo`，这是一个使用标准 C++ 和终端输出的后端教程。
+- `CONSOLE`：构建 `he3d_flight_simulator_console`，使用控制台后端在终端里显示飞行模拟器。
 
 生成的可执行文件和复制的资源文件都放在 `build/`。切换后端时重新配置同一个 `build/` 目录。
 
@@ -223,14 +223,14 @@ struct Platform {
 
 后端是一个提供 `Platform` 函数表的编译单元。作为目标内置后端使用时，它还要定义 `HE3D::GetBuiltinPlatform()`。
 
-仓库里已经包含一个完整教程后端：`src/platform/he3d_platform_console.cpp`。它使用 C++ 标准库处理内存、文件、时间和终端输出。它用 ANSI 24-bit 颜色和上半格字符显示 renderer buffer：前景色是上方像素，背景色是下方像素。
+仓库里已经包含一个完整控制台后端：`src/platform/he3d_platform_console.cpp`。它使用 C++ 标准库处理内存、文件、时间和终端输出。它用 ANSI 24-bit 颜色和上半格字符显示 renderer buffer：前景色是采样后的上方像素，背景色是采样后的下方像素。后端会先把 framebuffer 缩放到适合终端的尺寸再输出。
 
 构建和运行：
 
 ```sh
 cmake -S . -B build -DHE3D_BACKEND=CONSOLE
 cmake --build build
-./build/he3d_console_demo
+./build/he3d_flight_simulator_console
 ```
 
 自定义后端有两种接入方式：
@@ -342,17 +342,17 @@ target_include_directories(he3d_engine_console
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_executable(he3d_console_demo
-    examples/ConsoleBackend/main.cpp
+add_executable(he3d_flight_simulator_console
+    ${HE3D_FLIGHT_SOURCES}
 )
 
-target_link_libraries(he3d_console_demo
+target_link_libraries(he3d_flight_simulator_console
     PRIVATE
         he3d_engine_console
 )
 ```
 
-`examples/ConsoleBackend/main.cpp` 和其他 HE3D 程序一样使用后端：填写 `WindowDesc`，调用 `CreateWindow`，用返回的 `Window *` 构造 `Renderer`，绘制并 `Present`，最后调用 `DestroyWindow`。
+控制台目标和 SDL3/XAPI 目标使用同一份飞行模拟器源码。应用仍然是填写 `WindowDesc`，调用 `CreateWindow`，用返回的 `Window *` 构造 `Renderer`，绘制并 `Present`，最后调用 `DestroyWindow`。
 
 ## 引擎 API
 
