@@ -132,11 +132,15 @@ int main(int argc, char** argv, char** envp) {
     const int TN   = (RD * 2 + 1) * (RD * 2 + 1);
 
     struct Tile { HE3D::GameObject obj; int gx, gz; bool active; };
+    struct TileRequest { int gx, gz; };
     Tile* tiles = new Tile[TN];
     for (int i = 0; i < TN; i++) { tiles[i].active = false; tiles[i].obj.mesh = nullptr; }
 
     int centerX = 0, centerZ = 0;
     bool dirty = true;
+    TileRequest pendingTiles[TN];
+    int pendingCount = 0;
+    int pendingCursor = 0;
 
     // ---- Lighting ----
     HE3D::DirectionalLight sun;
@@ -207,28 +211,59 @@ int main(int argc, char** argv, char** envp) {
         int pGZ = (int)HE3D::floorf(plane.position.z / TS);
         if (pGX != centerX || pGZ != centerZ || dirty) {
             centerX = pGX; centerZ = pGZ; dirty = false;
-            struct { int x, z; bool done; } need[25];
-            int nCnt = 0;
-            for (int dx = -RD; dx <= RD; dx++)
-                for (int dz = -RD; dz <= RD; dz++)
-                    need[nCnt++] = {centerX + dx, centerZ + dz, false};
+            pendingCount = 0;
+            pendingCursor = 0;
 
             // Recycle out-of-range tiles.
             for (int i = 0; i < TN; i++) {
                 if (!tiles[i].active) continue;
                 bool found = false;
-                for (int j = 0; j < nCnt; j++) {
-                    if (!need[j].done && tiles[i].gx == need[j].x && tiles[i].gz == need[j].z)
-                        { need[j].done = true; found = true; break; }
-                }
+                for (int dx = -RD; dx <= RD && !found; dx++)
+                    for (int dz = -RD; dz <= RD; dz++)
+                        if (tiles[i].gx == centerX + dx && tiles[i].gz == centerZ + dz)
+                            { found = true; break; }
                 if (!found) { tiles[i].active = false; }
             }
-            // Fill new tiles.
-            for (int j = 0; j < nCnt; j++) {
-                if (need[j].done) continue;
+
+            for (int dx = -RD; dx <= RD; dx++) {
+                for (int dz = -RD; dz <= RD; dz++) {
+                    int gx = centerX + dx;
+                    int gz = centerZ + dz;
+                    bool found = false;
+                    for (int i = 0; i < TN; i++) {
+                        if (tiles[i].active && tiles[i].gx == gx && tiles[i].gz == gz) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found && pendingCount < TN) {
+                        pendingTiles[pendingCount++] = {gx, gz};
+                    }
+                }
+            }
+        }
+
+        // Generate or refresh at most one terrain tile per frame. Crossing a
+        // tile boundary used to update several meshes in one frame, which made
+        // XJ380 stall visibly and could pull the measured FPS down for a whole
+        // reporting interval.
+        if (pendingCursor < pendingCount) {
+            int gx = pendingTiles[pendingCursor].gx;
+            int gz = pendingTiles[pendingCursor].gz;
+            pendingCursor++;
+
+            bool alreadyActive = false;
+            for (int i = 0; i < TN; i++) {
+                if (tiles[i].active && tiles[i].gx == gx && tiles[i].gz == gz) {
+                    alreadyActive = true;
+                    break;
+                }
+            }
+
+            if (!alreadyActive) {
                 for (int i = 0; i < TN; i++) {
                     if (!tiles[i].active) {
-                        tiles[i].gx = need[j].x; tiles[i].gz = need[j].z;
+                        tiles[i].gx = gx; tiles[i].gz = gz;
                         float wx = tiles[i].gx * TS, wz = tiles[i].gz * TS;
                         if (!tiles[i].obj.mesh) {
                             tiles[i].obj.mesh = CreatePlane(GC, GS, wx, wz);
@@ -238,7 +273,6 @@ int main(int argc, char** argv, char** envp) {
                         }
                         tiles[i].obj.position = {wx, 0, wz};
                         tiles[i].active = (tiles[i].obj.mesh != nullptr);
-                        need[j].done = tiles[i].active;
                         break;
                     }
                 }
@@ -250,9 +284,13 @@ int main(int argc, char** argv, char** envp) {
         // framebuffer through XAPI or SDL3.
         eng.Clear({0.45f, 0.75f, 1.0f});
         HE3D::float3 tc = {0.3f, 0.7f, 0.3f};
+        float drawRadiusSq = (TS * 1.45f) * (TS * 1.45f);
         for (int i = 0; i < TN; i++)
-            if (tiles[i].active && tiles[i].obj.mesh)
+            if (tiles[i].active && tiles[i].obj.mesh) {
+                HE3D::float3 td = tiles[i].obj.position - cam.position;
+                if (td.x * td.x + td.z * td.z > drawRadiusSq) continue;
                 eng.DrawGameObject(tiles[i].obj, cam, tc);
+            }
         if (hasTex) eng.DrawGameObject(plane, cam, *pTex);
         else       eng.DrawGameObject(plane, cam, {0.8f, 0.2f, 0.2f});
         eng.Present();
