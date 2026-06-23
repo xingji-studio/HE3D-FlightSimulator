@@ -22,6 +22,8 @@ cmake --build build
 
 - `XAPI`: builds `he3d_flight_simulator.elf` for XJ380.
 - `SDL3`: builds `he3d_flight_simulator_sdl3` for desktop SDL3.
+- `CONSOLE`: builds `he3d_console_demo`, a standard C++ tutorial backend that
+  presents pixels in a terminal.
 
 Generated executables and copied assets are placed in `build/`. Reconfigure the
 same `build/` directory when switching backend.
@@ -230,6 +232,20 @@ returned by `CreateWindow` must be released with `DestroyWindow`.
 A backend is one translation unit that provides a `Platform` table and, when it
 is the built-in backend for a target, defines `HE3D::GetBuiltinPlatform()`.
 
+The repository includes a complete tutorial backend in
+`src/platform/he3d_platform_console.cpp`. It uses the C++ standard library for
+allocation, files, time, and terminal output. It presents the renderer buffer
+with ANSI 24-bit color and the upper-half block character: the foreground color
+is the top pixel and the background color is the pixel below it.
+
+Build and run it with:
+
+```sh
+cmake -S . -B build -DHE3D_BACKEND=CONSOLE
+cmake --build build
+./build/he3d_console_demo
+```
+
 There are two supported ways to use a custom backend:
 
 - Link it as the target backend by defining `GetBuiltinPlatform()` in the custom
@@ -238,7 +254,8 @@ There are two supported ways to use a custom backend:
 - Link an existing backend and call `SetPlatform(&myPlatform)` before creating a
   window, loading assets, or allocating engine objects.
 
-Backend files normally use this shape:
+Backend files normally use this shape. The console backend is the concrete
+version of this pattern:
 
 `Window` is intentionally opaque in `he3d_platform.hpp`. The backend defines the
 real `struct Window` in its own source file. Application code only receives a
@@ -341,6 +358,33 @@ or stride, convert or upload accordingly inside `present`.
 For a CMake target, compile `src/he3d.cpp`, the custom backend source file, and
 the application source. Link exactly one backend implementation that provides
 `GetBuiltinPlatform()`.
+
+The console backend target is wired in CMake as:
+
+```cmake
+add_library(he3d_engine_console STATIC
+    src/he3d.cpp
+    src/platform/he3d_platform_console.cpp
+)
+
+target_include_directories(he3d_engine_console
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(he3d_console_demo
+    examples/ConsoleBackend/main.cpp
+)
+
+target_link_libraries(he3d_console_demo
+    PRIVATE
+        he3d_engine_console
+)
+```
+
+`examples/ConsoleBackend/main.cpp` uses the backend like any other HE3D target:
+it fills a `WindowDesc`, calls `CreateWindow`, constructs a `Renderer` with the
+returned `Window *`, draws, presents, and finally calls `DestroyWindow`.
 
 ## Engine API
 

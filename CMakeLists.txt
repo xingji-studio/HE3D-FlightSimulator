@@ -2,11 +2,11 @@ cmake_minimum_required(VERSION 3.20)
 
 project(HE3D LANGUAGES CXX)
 
-set(HE3D_BACKEND "XAPI" CACHE STRING "HE3D backend to build: XAPI or SDL3")
-set_property(CACHE HE3D_BACKEND PROPERTY STRINGS XAPI SDL3)
+set(HE3D_BACKEND "XAPI" CACHE STRING "HE3D backend to build: XAPI, SDL3, or CONSOLE")
+set_property(CACHE HE3D_BACKEND PROPERTY STRINGS XAPI SDL3 CONSOLE)
 string(TOUPPER "${HE3D_BACKEND}" HE3D_BACKEND)
-if(NOT HE3D_BACKEND STREQUAL "XAPI" AND NOT HE3D_BACKEND STREQUAL "SDL3")
-    message(FATAL_ERROR "HE3D_BACKEND must be XAPI or SDL3")
+if(NOT HE3D_BACKEND STREQUAL "XAPI" AND NOT HE3D_BACKEND STREQUAL "SDL3" AND NOT HE3D_BACKEND STREQUAL "CONSOLE")
+    message(FATAL_ERROR "HE3D_BACKEND must be XAPI, SDL3, or CONSOLE")
 endif()
 message(STATUS "HE3D backend: ${HE3D_BACKEND}")
 
@@ -189,4 +189,32 @@ if(HE3D_BACKEND STREQUAL "SDL3")
     else()
         message(WARNING "SDL3 was not found; he3d_flight_simulator_sdl3 will not be built")
     endif()
+endif()
+
+if(HE3D_BACKEND STREQUAL "CONSOLE")
+    add_library(he3d_engine_console STATIC
+        ${HE3D_CORE_SOURCES}
+        src/platform/he3d_platform_console.cpp
+    )
+
+    target_include_directories(he3d_engine_console
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_compile_options(he3d_engine_console
+        PRIVATE
+            $<$<CONFIG:Release>:-O2>
+            $<$<CONFIG:Debug>:-O0>
+            $<$<CONFIG:Debug>:-g>
+    )
+
+    add_executable(he3d_console_demo
+        examples/ConsoleBackend/main.cpp
+    )
+
+    target_link_libraries(he3d_console_demo
+        PRIVATE
+            he3d_engine_console
+    )
 endif()
