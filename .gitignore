@@ -1,0 +1,28 @@
+# Build outputs
+build/
+build-root/
+he3d_flight
+he3d_flight.exe
+xxcc-temp-out/
+obj/
+obj-gui/
+obj-tui/
+*.o
+*.a
+*.exe
+
+# Local tools and state
+filebrowser
+filebrowser.db
+.claude/
+
+# Editor/OS noise
+.DS_Store
+*.swp
+*~
+
+# Archived prototype (not for distribution)
+OldSrc/
+
+# Platform SDK documentation (not for distribution)
+XJ380_API_Spec_CPP_1_3.pdf
