@@ -114,16 +114,25 @@ HE3D_ALWAYS_INLINE float rsqrtf(float x) {
 // Software sin/cos using minimax polynomial (degree 7) on [-PI, PI].
 // Better accuracy than truncated Taylor at the same operation count.
 HE3D_ALWAYS_INLINE float sinf(float x) {
-    // Range reduction to [-PI, PI]
+    // Range reduction to [-PI, PI].  The period is TAU, not PI; using PI here
+    // flips cos/sin signs at half-turn boundaries and breaks camera rotation.
     if (x >  3.141592653589793f) {
-        int n = (int)(x * 0.3183098861837907f + 0.5f);
-        x -= (float)n * 3.141592653589793f;
+        int n = (int)(x * 0.15915494309189535f + 0.5f);
+        x -= (float)n * 6.283185307179586f;
     }
     if (x < -3.141592653589793f) {
-        int n = (int)(x * -0.3183098861837907f + 0.5f);
-        x += (float)n * 3.141592653589793f;
+        int n = (int)(x * -0.15915494309189535f + 0.5f);
+        x += (float)n * 6.283185307179586f;
     }
-    // Now x in [-PI, PI]. Minimax polynomial (relative error < 1e-7).
+    // Mirror to [-PI/2, PI/2] before evaluating the polynomial. This keeps
+    // half-turns stable for camera and object quaternions.
+    if (x > 1.5707963267948966f) {
+        x = 3.141592653589793f - x;
+    } else if (x < -1.5707963267948966f) {
+        x = -3.141592653589793f - x;
+    }
+
+    // Now x in [-PI/2, PI/2]. Minimax polynomial (relative error < 1e-7).
     float x2 = x * x;
     float r = x;
     r += x * x2 * -0.16666656732559204f;      // ~ -1/3!  (minimax tuned)

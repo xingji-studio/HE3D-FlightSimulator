@@ -35,4 +35,4 @@ cmake --build build
 - `src/`：渲染器、加载器和平台后端
 - `examples/FlightSimulator/`：飞行模拟器示例
 - `xj380/include/`：XAPI 构建使用的 XJ380 头文件
-- `docs/technical.zh-CN.md`：实现笔记
+- `docs/technical.zh-CN.md`：技术手册和 API 参考

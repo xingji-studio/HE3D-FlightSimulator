@@ -36,4 +36,4 @@ The executable and copied assets are written to `build/`.
 - `src/`: renderer, loaders, and platform backends
 - `examples/FlightSimulator/`: flight simulator sample
 - `xj380/include/`: XJ380 headers for the XAPI build
-- `docs/technical.md`: implementation notes
+- `docs/technical.md`: technical manual and API reference
