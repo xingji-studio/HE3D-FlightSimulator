@@ -240,6 +240,10 @@ There are two supported ways to use a custom backend:
 
 Backend files normally use this shape:
 
+`Window` is intentionally opaque in `he3d_platform.hpp`. The backend defines the
+real `struct Window` in its own source file. Application code only receives a
+`Window *` from `CreateWindow` and passes that pointer back to HE3D functions.
+
 ```cpp
 #include "he3d_platform.hpp"
 
@@ -287,6 +291,26 @@ const Platform *GetBuiltinPlatform()
 }
 ```
 
+Application code does not construct `Window` directly:
+
+```cpp
+HE3D::WindowDesc desc = {};
+desc.width = 800;
+desc.height = 600;
+desc.title = "Example";
+
+HE3D::Window *window = HE3D::CreateWindow(&desc);
+HE3D::Renderer renderer(window, desc.width, desc.height);
+
+while (!HE3D::WindowShouldClose(window)) {
+    HE3D::PollEvents(window);
+    renderer.Clear({0.1f, 0.1f, 0.12f});
+    renderer.Present();
+}
+
+HE3D::DestroyWindow(window);
+```
+
 Backend callback contracts:
 
 - `alloc` returns storage suitable for any HE3D object. `free` releases storage
@@ -294,8 +318,8 @@ Backend callback contracts:
 - `loadFile` sets `outFile->handle`, `outFile->data`, and `outFile->length` on
   success. It returns `false` and leaves no owned data on failure.
 - `closeFile` releases data returned by `loadFile`.
-- `createWindow` returns a backend-owned `Window *`. `Window` is opaque outside
-  the backend.
+- `createWindow` allocates and returns a backend-owned `Window *`. The caller
+  treats it as an opaque handle.
 - `setWindowTitle` may ignore unsupported title changes, but must tolerate a
   valid window and title.
 - `destroyWindow` releases all resources owned by the window.

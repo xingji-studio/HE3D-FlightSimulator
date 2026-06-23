@@ -229,6 +229,8 @@ struct Platform {
 
 后端文件通常使用下面的结构：
 
+`he3d_platform.hpp` 里的 `Window` 是不透明类型。真正的 `struct Window` 只在后端自己的源文件里定义。应用代码只从 `CreateWindow` 拿到 `Window *`，然后把这个指针继续传给 HE3D 的函数。
+
 ```cpp
 #include "he3d_platform.hpp"
 
@@ -276,12 +278,32 @@ const Platform *GetBuiltinPlatform()
 }
 ```
 
+应用代码不直接构造 `Window`：
+
+```cpp
+HE3D::WindowDesc desc = {};
+desc.width = 800;
+desc.height = 600;
+desc.title = "Example";
+
+HE3D::Window *window = HE3D::CreateWindow(&desc);
+HE3D::Renderer renderer(window, desc.width, desc.height);
+
+while (!HE3D::WindowShouldClose(window)) {
+    HE3D::PollEvents(window);
+    renderer.Clear({0.1f, 0.1f, 0.12f});
+    renderer.Present();
+}
+
+HE3D::DestroyWindow(window);
+```
+
 后端回调契约：
 
 - `alloc` 返回可用于任意 HE3D 对象的内存。`free` 释放 `alloc` 返回的内存，并应接受 `nullptr`。
 - `loadFile` 成功时填写 `outFile->handle`、`outFile->data`、`outFile->length`。失败时返回 `false`，且不留下需要释放的数据。
 - `closeFile` 释放 `loadFile` 返回的数据。
-- `createWindow` 返回后端拥有的 `Window *`。`Window` 对后端外部是不透明类型。
+- `createWindow` 分配并返回后端拥有的 `Window *`。调用方把它当作不透明句柄使用。
 - `setWindowTitle` 可以忽略不支持的标题修改，但要能接受有效窗口和标题。
 - `destroyWindow` 释放窗口拥有的全部资源。
 - `setKeyCallback` 保存回调函数和用户指针，供输入事件使用。
