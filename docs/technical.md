@@ -225,6 +225,99 @@ Platform entry points:
 Files returned by `LoadFile` remain valid until `CloseFile` is called. Windows
 returned by `CreateWindow` must be released with `DestroyWindow`.
 
+## Custom Backend
+
+A backend is one translation unit that provides a `Platform` table and, when it
+is the built-in backend for a target, defines `HE3D::GetBuiltinPlatform()`.
+
+There are two supported ways to use a custom backend:
+
+- Link it as the target backend by defining `GetBuiltinPlatform()` in the custom
+  backend source file. Do not link another source file that also defines
+  `GetBuiltinPlatform()`.
+- Link an existing backend and call `SetPlatform(&myPlatform)` before creating a
+  window, loading assets, or allocating engine objects.
+
+Backend files normally use this shape:
+
+```cpp
+#include "he3d_platform.hpp"
+
+namespace HE3D {
+
+struct Window {
+    /* backend-owned window state */
+};
+
+static void *MyAlloc(unsigned long size) { /* ... */ }
+static void  MyFree(void *ptr) { /* ... */ }
+
+static bool MyLoadFile(const char *path, FileData *outFile) { /* ... */ }
+static void MyCloseFile(FileData *file) { /* ... */ }
+
+static Window *MyCreateWindow(const WindowDesc *desc) { /* ... */ }
+static void MySetWindowTitle(Window *window, const char *title) { /* ... */ }
+static void MyDestroyWindow(Window *window) { /* ... */ }
+static void MySetKeyCallback(Window *window, KeyCallback callback, void *user) { /* ... */ }
+static void MyPollEvents(Window *window) { /* ... */ }
+static bool MyShouldClose(Window *window) { /* ... */ }
+static double MyTimeSeconds() { /* ... */ }
+static void MyPresent(Window *window, int width, int height, const ColorA *pixels) { /* ... */ }
+
+static const Platform g_myPlatform = {
+    MyAlloc,
+    MyFree,
+    MyLoadFile,
+    MyCloseFile,
+    MyCreateWindow,
+    MySetWindowTitle,
+    MyDestroyWindow,
+    MySetKeyCallback,
+    MyPollEvents,
+    MyShouldClose,
+    MyTimeSeconds,
+    MyPresent
+};
+
+const Platform *GetBuiltinPlatform()
+{
+    return &g_myPlatform;
+}
+
+}
+```
+
+Backend callback contracts:
+
+- `alloc` returns storage suitable for any HE3D object. `free` releases storage
+  from `alloc` and should accept `nullptr`.
+- `loadFile` sets `outFile->handle`, `outFile->data`, and `outFile->length` on
+  success. It returns `false` and leaves no owned data on failure.
+- `closeFile` releases data returned by `loadFile`.
+- `createWindow` returns a backend-owned `Window *`. `Window` is opaque outside
+  the backend.
+- `setWindowTitle` may ignore unsupported title changes, but must tolerate a
+  valid window and title.
+- `destroyWindow` releases all resources owned by the window.
+- `setKeyCallback` stores the callback and user pointer for later input events.
+- `pollEvents` pumps the host event queue and invokes the stored key callback.
+- `shouldClose` returns `true` after user close or backend failure.
+- `timeSeconds` returns monotonic seconds.
+- `present` receives `width * height` row-major `ColorA` pixels. The backend
+  does not own this memory after the call returns.
+
+Keyboard callbacks use integer key values. Printable keys should use their ASCII
+code, and Escape should use `27`. Backends with separate key-up events should
+forward both press and release. Backends that only receive key press messages can
+synthesize release in `pollEvents`.
+
+`ColorA` pixels are RGBA byte order. If the host API uses a different byte order
+or stride, convert or upload accordingly inside `present`.
+
+For a CMake target, compile `src/he3d.cpp`, the custom backend source file, and
+the application source. Link exactly one backend implementation that provides
+`GetBuiltinPlatform()`.
+
 ## Engine API
 
 `DirectionalLight` controls simple directional lighting:

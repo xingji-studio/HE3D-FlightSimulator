@@ -218,6 +218,84 @@ struct Platform {
 
 `LoadFile` 返回的数据在调用 `CloseFile` 前有效。`CreateWindow` 返回的窗口必须用 `DestroyWindow` 释放。
 
+## 自定义后端
+
+后端是一个提供 `Platform` 函数表的编译单元。作为目标内置后端使用时，它还要定义 `HE3D::GetBuiltinPlatform()`。
+
+自定义后端有两种接入方式：
+
+- 作为目标后端链接：在自定义后端源文件里定义 `GetBuiltinPlatform()`。同一个目标里不要再链接其他同样定义 `GetBuiltinPlatform()` 的后端文件。
+- 运行时替换平台：链接已有后端，然后在创建窗口、加载资源或分配引擎对象之前调用 `SetPlatform(&myPlatform)`。
+
+后端文件通常使用下面的结构：
+
+```cpp
+#include "he3d_platform.hpp"
+
+namespace HE3D {
+
+struct Window {
+    /* 后端自己的窗口状态 */
+};
+
+static void *MyAlloc(unsigned long size) { /* ... */ }
+static void  MyFree(void *ptr) { /* ... */ }
+
+static bool MyLoadFile(const char *path, FileData *outFile) { /* ... */ }
+static void MyCloseFile(FileData *file) { /* ... */ }
+
+static Window *MyCreateWindow(const WindowDesc *desc) { /* ... */ }
+static void MySetWindowTitle(Window *window, const char *title) { /* ... */ }
+static void MyDestroyWindow(Window *window) { /* ... */ }
+static void MySetKeyCallback(Window *window, KeyCallback callback, void *user) { /* ... */ }
+static void MyPollEvents(Window *window) { /* ... */ }
+static bool MyShouldClose(Window *window) { /* ... */ }
+static double MyTimeSeconds() { /* ... */ }
+static void MyPresent(Window *window, int width, int height, const ColorA *pixels) { /* ... */ }
+
+static const Platform g_myPlatform = {
+    MyAlloc,
+    MyFree,
+    MyLoadFile,
+    MyCloseFile,
+    MyCreateWindow,
+    MySetWindowTitle,
+    MyDestroyWindow,
+    MySetKeyCallback,
+    MyPollEvents,
+    MyShouldClose,
+    MyTimeSeconds,
+    MyPresent
+};
+
+const Platform *GetBuiltinPlatform()
+{
+    return &g_myPlatform;
+}
+
+}
+```
+
+后端回调契约：
+
+- `alloc` 返回可用于任意 HE3D 对象的内存。`free` 释放 `alloc` 返回的内存，并应接受 `nullptr`。
+- `loadFile` 成功时填写 `outFile->handle`、`outFile->data`、`outFile->length`。失败时返回 `false`，且不留下需要释放的数据。
+- `closeFile` 释放 `loadFile` 返回的数据。
+- `createWindow` 返回后端拥有的 `Window *`。`Window` 对后端外部是不透明类型。
+- `setWindowTitle` 可以忽略不支持的标题修改，但要能接受有效窗口和标题。
+- `destroyWindow` 释放窗口拥有的全部资源。
+- `setKeyCallback` 保存回调函数和用户指针，供输入事件使用。
+- `pollEvents` 轮询宿主事件队列，并调用已保存的键盘回调。
+- `shouldClose` 在用户关闭窗口或后端失败后返回 `true`。
+- `timeSeconds` 返回单调递增的秒数。
+- `present` 接收 `width * height` 个按行排列的 `ColorA` 像素。调用返回后，后端不拥有这块内存。
+
+键盘回调使用整数键值。可打印按键应使用 ASCII 码，Escape 使用 `27`。有独立 key-up 事件的后端应同时转发按下和释放；只收到按下消息的后端可以在 `pollEvents` 里合成释放。
+
+`ColorA` 像素是 RGBA 字节顺序。如果宿主 API 使用不同字节顺序或 stride，在 `present` 内转换或上传。
+
+CMake 目标需要编译 `src/he3d.cpp`、自定义后端源文件和应用源文件。每个目标只能链接一个提供 `GetBuiltinPlatform()` 的后端实现。
+
 ## 引擎 API
 
 `DirectionalLight` 控制方向光：
