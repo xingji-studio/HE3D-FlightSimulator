@@ -2,18 +2,67 @@
 #include "x3api.h"
 #include <time.h>
 
+#ifndef MSG_KEYUP
+#define MSG_KEYUP   9
+#endif
+#ifndef MSG_KEYDOWN
+#define MSG_KEYDOWN 10
+#endif
+
 namespace HE3D {
 
 struct Window {
     HDLE handle;
+    int displayWidth;
+    int displayHeight;
+    ColorA *scaledPixels;
+    int scaledWidth;
+    int scaledHeight;
     KeyCallback keyCallback;
     void *keyUser;
     bool closeRequested;
+    bool needsFlushTimeEventPump;
+    bool hasKeyUpMessages;
     bool keyDown[256];
     double keyLastSeen[256];
 };
 
 static Window *g_msgWindow = nullptr;
+
+static bool ContainsText(const char *text, const char *needle)
+{
+    if (!text || !needle || !*needle)
+    {
+        return false;
+    }
+
+    for (const char *p = text; *p; ++p)
+    {
+        const char *a = p;
+        const char *b = needle;
+        while (*a && *b && *a == *b)
+        {
+            ++a;
+            ++b;
+        }
+        if (!*b)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool RunningUnderXswl()
+{
+    char version[64];
+    for (unsigned int i = 0; i < sizeof(version); i++)
+    {
+        version[i] = 0;
+    }
+    xapi_GetSystemVersion(version);
+    return ContainsText(version, "Emulator");
+}
 
 static double XapiNowSeconds()
 {
@@ -30,11 +79,20 @@ static int NormalizeXapiKey(UINT64 type, UINT64 lData)
     {
         switch (key)
         {
-            case 128: return 27;   /* ESC */
-            case 130: return '\n'; /* Enter */
+            case 128: return 27;   /* XKEY_ESC */
+            case 130: return '\n'; /* XSWL legacy Enter */
             case '\b': return '\b';
             default: break;
         }
+    }
+
+    switch (key)
+    {
+        case 128: return 27;   /* XKEY_ESC */
+        case 129: return '\b'; /* XKEY_BACKSPACE */
+        case 130: return '\t'; /* XKEY_TAB */
+        case 131: return '\n'; /* XKEY_ENTER */
+        default: break;
     }
 
     return key;
@@ -47,20 +105,43 @@ static void XapiMsgHandler(UINT64 type, UINT64 hData, UINT64 lData)
         return;
     }
 
-    if (type == MSG_CHAR || type == MSG_SPCHAR)
+    (void)hData;
+    if (type == MSG_KEYDOWN || type == MSG_KEYUP)
     {
-        (void)hData;
         int key = NormalizeXapiKey(type, lData);
-        if (key == 27)
+        bool pressed = type == MSG_KEYDOWN;
+        if (key == 27 && pressed)
         {
             g_msgWindow->closeRequested = true;
         }
         if (key >= 0 && key < 256)
         {
+            g_msgWindow->hasKeyUpMessages = true;
+            g_msgWindow->keyDown[key] = pressed;
+            g_msgWindow->keyLastSeen[key] = pressed ? XapiNowSeconds() : 0.0;
+        }
+        g_msgWindow->keyCallback(key, pressed, g_msgWindow->keyUser);
+        return;
+    }
+
+    if (type == MSG_CHAR || type == MSG_SPCHAR)
+    {
+        if (g_msgWindow->hasKeyUpMessages)
+        {
+            return;
+        }
+
+        int key = NormalizeXapiKey(type, lData);
+        if (key == 27)
+        {
+            g_msgWindow->closeRequested = true;
+        }
+        if (key >= 0 && key < 256 && !g_msgWindow->keyDown[key])
+        {
             g_msgWindow->keyDown[key] = true;
             g_msgWindow->keyLastSeen[key] = XapiNowSeconds();
+            g_msgWindow->keyCallback(key, true, g_msgWindow->keyUser);
         }
-        g_msgWindow->keyCallback(key, true, g_msgWindow->keyUser);
     }
 }
 
@@ -131,9 +212,16 @@ static Window *XapiCreateWindow(const WindowDesc *desc)
     }
 
     window->handle = 0;
+    window->displayWidth = desc->width;
+    window->displayHeight = desc->height;
+    window->scaledPixels = nullptr;
+    window->scaledWidth = 0;
+    window->scaledHeight = 0;
     window->keyCallback = nullptr;
     window->keyUser = nullptr;
     window->closeRequested = false;
+    window->needsFlushTimeEventPump = RunningUnderXswl();
+    window->hasKeyUpMessages = false;
     for (int i = 0; i < 256; i++)
     {
         window->keyDown[i] = false;
@@ -174,6 +262,7 @@ static void XapiDestroyWindow(Window *window)
         g_msgWindow = nullptr;
     }
     xapi_CloseWindow(window->handle);
+    delete[] window->scaledPixels;
     delete window;
 }
 
@@ -190,11 +279,15 @@ static void XapiSetKeyCallback(Window *window, KeyCallback callback, void *user)
 
 static void XapiPollEvents(Window *window)
 {
-    xapi_FlushTime();
+    if (window && window->needsFlushTimeEventPump)
+    {
+        xapi_FlushTime();
+    }
+
     if (window && window->keyCallback)
     {
         double now = XapiNowSeconds();
-        const double release_timeout = 0.20;
+        const double release_timeout = window->hasKeyUpMessages ? 0.35 : 0.20;
         for (int i = 0; i < 256; i++)
         {
             if (window->keyDown[i] && (now - window->keyLastSeen[i]) > release_timeout)
@@ -218,6 +311,88 @@ static double XapiTimeSeconds()
     return (double)now.tv_sec + (double)now.tv_nsec * 0.000000001;
 }
 
+static void XapiSleepMilliseconds(unsigned long long milliseconds)
+{
+    xapi_Sleep((UINT64)milliseconds);
+}
+
+static bool XapiEnsureScaleBuffer(Window *window)
+{
+    if (window->scaledPixels && window->scaledWidth == window->displayWidth &&
+        window->scaledHeight == window->displayHeight)
+    {
+        return true;
+    }
+
+    delete[] window->scaledPixels;
+    window->scaledPixels = nullptr;
+    window->scaledWidth = 0;
+    window->scaledHeight = 0;
+
+    if (window->displayWidth <= 0 || window->displayHeight <= 0)
+    {
+        return false;
+    }
+
+    window->scaledPixels = new ColorA[(unsigned long)window->displayWidth *
+                                      (unsigned long)window->displayHeight];
+    if (!window->scaledPixels)
+    {
+        return false;
+    }
+
+    window->scaledWidth = window->displayWidth;
+    window->scaledHeight = window->displayHeight;
+    return true;
+}
+
+static const ColorA *XapiScaleToWindow(Window *window, int width, int height, const ColorA *pixels)
+{
+    if (width == window->displayWidth && height == window->displayHeight)
+    {
+        return pixels;
+    }
+
+    if (!XapiEnsureScaleBuffer(window))
+    {
+        return nullptr;
+    }
+
+    if (window->displayWidth == width * 2 && window->displayHeight == height * 2)
+    {
+        for (int y = 0; y < height; y++)
+        {
+            const ColorA *src = pixels + (long long)y * width;
+            ColorA *dst0 = window->scaledPixels + (long long)(y * 2) * window->displayWidth;
+            ColorA *dst1 = dst0 + window->displayWidth;
+            for (int x = 0; x < width; x++)
+            {
+                ColorA c = src[x];
+                int dx = x * 2;
+                dst0[dx] = c;
+                dst0[dx + 1] = c;
+                dst1[dx] = c;
+                dst1[dx + 1] = c;
+            }
+        }
+        return window->scaledPixels;
+    }
+
+    for (int y = 0; y < window->displayHeight; y++)
+    {
+        int srcY = (int)(((long long)y * height) / window->displayHeight);
+        ColorA *dst = window->scaledPixels + (long long)y * window->displayWidth;
+        const ColorA *src = pixels + (long long)srcY * width;
+        for (int x = 0; x < window->displayWidth; x++)
+        {
+            int srcX = (int)(((long long)x * width) / window->displayWidth);
+            dst[x] = src[srcX];
+        }
+    }
+
+    return window->scaledPixels;
+}
+
 static void XapiPresent(Window *window, int width, int height, const ColorA *pixels)
 {
     if (!window || !pixels || width <= 0 || height <= 0)
@@ -225,8 +400,14 @@ static void XapiPresent(Window *window, int width, int height, const ColorA *pix
         return;
     }
 
-    xapi_WriteBufferA(window->handle, 0, 0, (UINT32)width, (UINT32)height,
-                      (XCOLORA *)pixels);
+    const ColorA *presentPixels = XapiScaleToWindow(window, width, height, pixels);
+    if (!presentPixels)
+    {
+        return;
+    }
+
+    xapi_WriteBufferA(window->handle, 0, 0, (UINT32)window->displayWidth,
+                      (UINT32)window->displayHeight, (XCOLORA *)presentPixels);
     xapi_RefreshWindow(window->handle);
 }
 
@@ -242,6 +423,7 @@ static const Platform g_xapiPlatform = {
     XapiPollEvents,
     XapiShouldClose,
     XapiTimeSeconds,
+    XapiSleepMilliseconds,
     XapiPresent
 };
 

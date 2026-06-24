@@ -50,7 +50,7 @@ Scalar functions:
 - `roundf(float x) -> float`
 - `fracf(float x) -> float`
 - `sqrtf(float x) -> float`
-- `rsqrtf(float x) -> float`
+- `rsqrtf(float x) -> float`: fast inverse square root.
 - `sinf(float x) -> float`
 - `cosf(float x) -> float`
 - `tanf(float x) -> float`
@@ -103,7 +103,8 @@ Supported operations:
 - `lengthSq()`
 - `length()`
 - `normalize()`
-- `normalizeFast()`
+- `normalizeFast()`: uses `rsqrtf`; intended for hot paths where a small
+  normalization error is acceptable.
 - `float3::dot(a, b)`
 - `float3::cross(a, b)`
 - `float3::lerp(a, b, t)`
@@ -124,7 +125,8 @@ Supported operations:
 - `quat::FromEuler(float3 euler)`
 - `quat::FromEulerFast(float3 euler)`
 - `normalize()`
-- `normalizeFast()`
+- `normalizeFast()`: uses `rsqrtf`; intended for frame-to-frame orientation
+  cleanup rather than exact math.
 - quaternion multiplication with `operator*`
 - `rotate(const float3& v)`
 - `inverse()`
@@ -202,6 +204,7 @@ struct Platform {
     void    (*pollEvents)(Window *window);
     bool    (*shouldClose)(Window *window);
     double  (*timeSeconds)();
+    void    (*sleepMilliseconds)(unsigned long long milliseconds);
     void    (*present)(Window *window, int width, int height, const ColorA *pixels);
 };
 ```
@@ -222,6 +225,12 @@ Platform entry points:
 - `PollEvents(Window *window)`
 - `WindowShouldClose(Window *window) -> bool`
 - `TimeSeconds() -> double`
+- `SleepMilliseconds(unsigned long long milliseconds)`
+- `SetFrameRateLimit(unsigned int fps)`
+- `GetFrameRateLimit() -> unsigned int`
+- `SetFxaaEnabled(bool enabled)`
+- `IsFxaaEnabled() -> bool`
+- `PaceFrame(double frameStart)`
 - `Present(Window *window, int width, int height, const ColorA *pixels)`
 
 Files returned by `LoadFile` remain valid until `CloseFile` is called. Windows
@@ -530,9 +539,8 @@ triangle.
 ## Built-in Backends
 
 The XAPI backend creates XJ380 GUI windows and presents `ColorA` buffers through
-`xapi_WriteBufferA`. XJ380 keyboard messages are normalized from `MSG_CHAR` and
-`MSG_SPCHAR`; the key value is read from `lData`. XJ380 sends key press messages,
-so the backend synthesizes key release after a short timeout.
+`xapi_WriteBufferA`. Keyboard input prefers `MSG_KEYDOWN` and `MSG_KEYUP`; the
+older `MSG_CHAR` / `MSG_SPCHAR` path is kept only as a compatibility fallback.
 
 The SDL3 backend creates an SDL window, renderer, and streaming
 `SDL_PIXELFORMAT_RGBA32` texture. SDL key down/up events are passed directly to

@@ -40,6 +40,7 @@ struct Platform {
     void    (*pollEvents)(Window *window);
     bool    (*shouldClose)(Window *window);
     double  (*timeSeconds)();
+    void    (*sleepMilliseconds)(unsigned long long milliseconds);
     void    (*present)(Window *window, int width, int height, const ColorA *pixels);
 };
 
@@ -49,6 +50,11 @@ const Platform *GetBuiltinPlatform();
 
 void *Alloc(unsigned long size);
 void  Free(void *ptr);
+void  SetFrameRateLimit(unsigned int fps);
+unsigned int GetFrameRateLimit();
+void  SetFxaaEnabled(bool enabled);
+bool  IsFxaaEnabled();
+void  PaceFrame(double frameStart);
 
 inline bool LoadFile(const char *path, FileData *outFile)
 {
@@ -93,6 +99,11 @@ inline bool WindowShouldClose(Window *window)
 inline double TimeSeconds()
 {
     return GetPlatform()->timeSeconds();
+}
+
+inline void SleepMilliseconds(unsigned long long milliseconds)
+{
+    GetPlatform()->sleepMilliseconds(milliseconds);
 }
 
 inline void Present(Window *window, int width, int height, const ColorA *pixels)

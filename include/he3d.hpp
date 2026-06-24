@@ -129,8 +129,10 @@ private:
     Window *m_window;
 
     ColorA *m_colorBuf; // m_width * m_height
+    ColorA *m_fxaaBuf;  // m_width * m_height, allocated lazily
     float  *m_depthBuf; // m_width * m_height
 
+    bool ApplyFxaa();
     void RasterizeSolid(const float3 *v_view, const float2 *p_screen, float3 color);
     void RasterizeTextured(const float3 *v_view, const float2 *p_screen,
                            const float2 *uvs, float intensity, const Texture& tex);

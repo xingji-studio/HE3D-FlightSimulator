@@ -14,6 +14,10 @@ static bool keys[256];
 static volatile bool g_quit = false;
 static const char *WINDOW_TITLE = "HE3D Flight Simulator";
 
+#ifdef __XJ380_OS__
+extern "C" void xapi_OutputSerial(char *str);
+#endif
+
 static void KeyHandler(int key, bool pressed, void *) {
     if (key >= 0 && key < 256) {
         keys[key] = pressed;
@@ -55,6 +59,29 @@ static void BuildFpsTitle(char *dst, int maxLen, unsigned int fps)
     dst[pos] = 0;
 }
 
+static void ReportFps(HE3D::Window *win, unsigned int fps)
+{
+#ifdef __XJ380_OS__
+    (void)win;
+    char line[32];
+    int pos = 0;
+    const char *prefix = "HE3D FPS ";
+    while (*prefix && pos < (int)sizeof(line) - 1) {
+        line[pos++] = *prefix++;
+    }
+    AppendUnsigned(line, &pos, (int)sizeof(line), fps);
+    if (pos < (int)sizeof(line) - 1) {
+        line[pos++] = '\n';
+    }
+    line[pos] = 0;
+    xapi_OutputSerial(line);
+#else
+    char title[64];
+    BuildFpsTitle(title, (int)sizeof(title), fps);
+    HE3D::SetWindowTitle(win, title);
+#endif
+}
+
 // ============================================================================
 // Input curve (nonlinear flight controls)
 // ============================================================================
@@ -90,6 +117,7 @@ static float NormAngle(float a) {
 int main(int argc, char** argv, char** envp) {
     // ---- Window ----
     const int W = 800, H = 600;
+    const int RW = W, RH = H;
     HE3D::WindowDesc windowDesc;
     windowDesc.width = W;
     windowDesc.height = H;
@@ -101,9 +129,11 @@ int main(int argc, char** argv, char** envp) {
         return 1;
     }
     HE3D::SetKeyCallback(win, KeyHandler, nullptr);
+    HE3D::SetFrameRateLimit(60);
+    HE3D::SetFxaaEnabled(false);
 
     // ---- Renderer ----
-    HE3D::Renderer eng(win, W, H);
+    HE3D::Renderer eng(win, RW, RH);
 
     // ---- Scene ----
     HE3D::Camera cam;
@@ -161,17 +191,25 @@ int main(int argc, char** argv, char** envp) {
     double lt = HE3D::TimeSeconds();
     double fpsStart = lt;
     unsigned int fpsFrames = 0;
+    bool fxaaKeyWasDown = false;
 
     // ---- Main loop ----
     while (!g_quit && !HE3D::WindowShouldClose(win)) {
+        double frameStart = HE3D::TimeSeconds();
         HE3D::PollEvents(win);
 
-        double now = HE3D::TimeSeconds();
+        double now = frameStart;
         float dt = (float)(now - lt);
         lt = now;
         if (dt > 0.1f) dt = 0.1f;
 
         cam.Update(dt);
+
+        bool fxaaKeyDown = keys['F'] || keys['f'];
+        if (fxaaKeyDown && !fxaaKeyWasDown) {
+            HE3D::SetFxaaEnabled(!HE3D::IsFxaaEnabled());
+        }
+        fxaaKeyWasDown = fxaaKeyDown;
 
         // Input mapping:
         // W/S pitch the nose, Q/E yaw the aircraft, and A/D roll the wings.
@@ -299,12 +337,11 @@ int main(int argc, char** argv, char** envp) {
         double fpsElapsed = now - fpsStart;
         if (fpsElapsed >= 1.0) {
             unsigned int fps = (unsigned int)((double)fpsFrames / fpsElapsed + 0.5);
-            char title[64];
-            BuildFpsTitle(title, (int)sizeof(title), fps);
-            HE3D::SetWindowTitle(win, title);
+            ReportFps(win, fps);
             fpsStart = now;
             fpsFrames = 0;
         }
+        HE3D::PaceFrame(frameStart);
     }
 
     // Cleanup

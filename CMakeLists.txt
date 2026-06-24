@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.20)
 
 project(HE3D LANGUAGES CXX)
 
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 set(HE3D_BACKEND "XAPI" CACHE STRING "HE3D backend to build: XAPI, SDL3, or CONSOLE")
 set_property(CACHE HE3D_BACKEND PROPERTY STRINGS XAPI SDL3 CONSOLE)
 string(TOUPPER "${HE3D_BACKEND}" HE3D_BACKEND)
@@ -9,6 +13,14 @@ if(NOT HE3D_BACKEND STREQUAL "XAPI" AND NOT HE3D_BACKEND STREQUAL "SDL3" AND NOT
     message(FATAL_ERROR "HE3D_BACKEND must be XAPI, SDL3, or CONSOLE")
 endif()
 message(STATUS "HE3D backend: ${HE3D_BACKEND}")
+
+option(HE3D_OPTIMIZE_FAST "Use -Ofast for Release builds" ON)
+if(HE3D_OPTIMIZE_FAST)
+    set(HE3D_RELEASE_OPT_FLAG -Ofast)
+else()
+    set(HE3D_RELEASE_OPT_FLAG -O2)
+endif()
+message(STATUS "HE3D Release optimization: ${HE3D_RELEASE_OPT_FLAG}")
 
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -64,7 +76,7 @@ if(HE3D_BACKEND STREQUAL "XAPI")
     target_compile_options(he3d_engine_xapi
         PRIVATE
             ${HE3D_XJ380_COMPILE_OPTIONS}
-            $<$<CONFIG:Release>:-O2>
+            $<$<CONFIG:Release>:${HE3D_RELEASE_OPT_FLAG}>
             $<$<CONFIG:Debug>:-O0>
             $<$<CONFIG:Debug>:-g>
     )
@@ -115,7 +127,7 @@ if(HE3D_BACKEND STREQUAL "XAPI")
     target_compile_options(he3d_flight_simulator
         PRIVATE
             ${HE3D_XJ380_COMPILE_OPTIONS}
-            $<$<CONFIG:Release>:-O2>
+            $<$<CONFIG:Release>:${HE3D_RELEASE_OPT_FLAG}>
             $<$<CONFIG:Debug>:-O0>
             $<$<CONFIG:Debug>:-g>
     )
@@ -154,7 +166,7 @@ if(HE3D_BACKEND STREQUAL "SDL3")
 
         target_compile_options(he3d_engine_sdl3
             PRIVATE
-                $<$<CONFIG:Release>:-O2>
+                $<$<CONFIG:Release>:${HE3D_RELEASE_OPT_FLAG}>
                 $<$<CONFIG:Debug>:-O0>
                 $<$<CONFIG:Debug>:-g>
         )
@@ -175,7 +187,7 @@ if(HE3D_BACKEND STREQUAL "SDL3")
 
         target_compile_options(he3d_flight_simulator_sdl3
             PRIVATE
-                $<$<CONFIG:Release>:-O2>
+                $<$<CONFIG:Release>:${HE3D_RELEASE_OPT_FLAG}>
                 $<$<CONFIG:Debug>:-O0>
                 $<$<CONFIG:Debug>:-g>
         )
@@ -203,11 +215,11 @@ if(HE3D_BACKEND STREQUAL "CONSOLE")
     )
 
     target_compile_options(he3d_engine_console
-        PRIVATE
-            $<$<CONFIG:Release>:-O2>
-            $<$<CONFIG:Debug>:-O0>
-            $<$<CONFIG:Debug>:-g>
-    )
+            PRIVATE
+                $<$<CONFIG:Release>:${HE3D_RELEASE_OPT_FLAG}>
+                $<$<CONFIG:Debug>:-O0>
+                $<$<CONFIG:Debug>:-g>
+        )
 
     add_executable(he3d_flight_simulator_console
         ${HE3D_FLIGHT_SOURCES}
@@ -219,11 +231,11 @@ if(HE3D_BACKEND STREQUAL "CONSOLE")
     )
 
     target_compile_options(he3d_flight_simulator_console
-        PRIVATE
-            $<$<CONFIG:Release>:-O2>
-            $<$<CONFIG:Debug>:-O0>
-            $<$<CONFIG:Debug>:-g>
-    )
+            PRIVATE
+                $<$<CONFIG:Release>:${HE3D_RELEASE_OPT_FLAG}>
+                $<$<CONFIG:Debug>:-O0>
+                $<$<CONFIG:Debug>:-g>
+        )
 
     target_link_libraries(he3d_flight_simulator_console
         PRIVATE

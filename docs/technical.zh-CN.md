@@ -45,7 +45,7 @@ cmake --build build
 - `roundf(float x) -> float`
 - `fracf(float x) -> float`
 - `sqrtf(float x) -> float`
-- `rsqrtf(float x) -> float`
+- `rsqrtf(float x) -> float`：快速平方根倒数。
 - `sinf(float x) -> float`
 - `cosf(float x) -> float`
 - `tanf(float x) -> float`
@@ -98,7 +98,7 @@ struct float3 {
 - `lengthSq()`
 - `length()`
 - `normalize()`
-- `normalizeFast()`
+- `normalizeFast()`：使用 `rsqrtf`，用于允许少量归一化误差的热路径。
 - `float3::dot(a, b)`
 - `float3::cross(a, b)`
 - `float3::lerp(a, b, t)`
@@ -119,7 +119,7 @@ struct quat {
 - `quat::FromEuler(float3 euler)`
 - `quat::FromEulerFast(float3 euler)`
 - `normalize()`
-- `normalizeFast()`
+- `normalizeFast()`：使用 `rsqrtf`，用于每帧姿态清理，不作为精确数学接口。
 - 四元数乘法 `operator*`
 - `rotate(const float3& v)`
 - `inverse()`
@@ -195,6 +195,7 @@ struct Platform {
     void    (*pollEvents)(Window *window);
     bool    (*shouldClose)(Window *window);
     double  (*timeSeconds)();
+    void    (*sleepMilliseconds)(unsigned long long milliseconds);
     void    (*present)(Window *window, int width, int height, const ColorA *pixels);
 };
 ```
@@ -215,6 +216,12 @@ struct Platform {
 - `PollEvents(Window *window)`
 - `WindowShouldClose(Window *window) -> bool`
 - `TimeSeconds() -> double`
+- `SleepMilliseconds(unsigned long long milliseconds)`
+- `SetFrameRateLimit(unsigned int fps)`
+- `GetFrameRateLimit() -> unsigned int`
+- `SetFxaaEnabled(bool enabled)`
+- `IsFxaaEnabled() -> bool`
+- `PaceFrame(double frameStart)`
 - `Present(Window *window, int width, int height, const ColorA *pixels)`
 
 `LoadFile` 返回的数据在调用 `CloseFile` 前有效。`CreateWindow` 返回的窗口必须用 `DestroyWindow` 释放。
@@ -489,7 +496,7 @@ OBJ 法线不是必需项。HE3D 会为输出的每个三角形重新计算一�
 
 ## 内置后端
 
-XAPI 后端创建 XJ380 GUI 窗口，并通过 `xapi_WriteBufferA` 提交 `ColorA` 缓冲区。XJ380 键盘消息来自 `MSG_CHAR` 和 `MSG_SPCHAR`，键值读取自 `lData`。XJ380 发送按下消息，后端会在短超时后合成按键释放。
+XAPI 后端创建 XJ380 GUI 窗口，并通过 `xapi_WriteBufferA` 提交 `ColorA` 缓冲区。键盘输入优先使用 `MSG_KEYDOWN` 和 `MSG_KEYUP`，旧的 `MSG_CHAR` / `MSG_SPCHAR` 路径只作为兼容兜底。
 
 SDL3 后端创建 SDL 窗口、renderer 和 `SDL_PIXELFORMAT_RGBA32` streaming texture。SDL 的 key down/up 事件会直接传给 HE3D 键盘回调。
 

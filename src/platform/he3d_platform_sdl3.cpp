@@ -226,6 +226,11 @@ static double SdlTimeSeconds()
     return (double)SDL_GetTicksNS() * 0.000000001;
 }
 
+static void SdlSleepMilliseconds(unsigned long long milliseconds)
+{
+    SDL_Delay((Uint32)milliseconds);
+}
+
 static bool SdlEnsureTexture(Window *window, int width, int height)
 {
     if (window->texture && window->textureWidth == width && window->textureHeight == height)
@@ -283,6 +288,7 @@ static const Platform g_sdlPlatform = {
     SdlPollEvents,
     SdlShouldClose,
     SdlTimeSeconds,
+    SdlSleepMilliseconds,
     SdlPresent
 };
 

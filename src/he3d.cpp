@@ -8,6 +8,8 @@
 namespace HE3D {
 
 static const Platform *g_platform = nullptr;
+static unsigned int g_frameRateLimit = 0;
+static bool g_fxaaEnabled = false;
 
 const Platform *GetPlatform()
 {
@@ -31,6 +33,45 @@ void *Alloc(unsigned long size)
 void Free(void *ptr)
 {
     GetPlatform()->free(ptr);
+}
+
+void SetFrameRateLimit(unsigned int fps)
+{
+    g_frameRateLimit = fps;
+}
+
+unsigned int GetFrameRateLimit()
+{
+    return g_frameRateLimit;
+}
+
+void SetFxaaEnabled(bool enabled)
+{
+    g_fxaaEnabled = enabled;
+}
+
+bool IsFxaaEnabled()
+{
+    return g_fxaaEnabled;
+}
+
+void PaceFrame(double frameStart)
+{
+    if (g_frameRateLimit == 0)
+    {
+        return;
+    }
+
+    double targetFrameSeconds = 1.0 / (double)g_frameRateLimit;
+    double elapsed = TimeSeconds() - frameStart;
+    if (elapsed < targetFrameSeconds)
+    {
+        unsigned long long sleepMs = (unsigned long long)((targetFrameSeconds - elapsed) * 1000.0);
+        if (sleepMs > 0)
+        {
+            SleepMilliseconds(sleepMs);
+        }
+    }
 }
 
 }
@@ -171,6 +212,76 @@ struct Mat3
         };
     }
 };
+
+static const float HE3D_NEAR_Z = 0.1f;
+
+struct ClipVertex
+{
+    float3 view;
+    float2 uv;
+};
+
+static ClipVertex LerpClipVertex(const ClipVertex& a, const ClipVertex& b, float t)
+{
+    ClipVertex out;
+    out.view = a.view + (b.view - a.view) * t;
+    out.uv = a.uv + (b.uv - a.uv) * t;
+    return out;
+}
+
+static int ClipTriangleNear(const ClipVertex *input, ClipVertex *output)
+{
+    ClipVertex temp[4];
+    int count = 0;
+
+    for (int i = 0; i < 3; i++)
+    {
+        const ClipVertex& a = input[i];
+        const ClipVertex& b = input[(i + 1) % 3];
+        bool aInside = a.view.z > HE3D_NEAR_Z;
+        bool bInside = b.view.z > HE3D_NEAR_Z;
+
+        if (aInside && bInside)
+        {
+            temp[count++] = b;
+        }
+        else if (aInside && !bInside)
+        {
+            float t = (HE3D_NEAR_Z - a.view.z) / (b.view.z - a.view.z);
+            temp[count++] = LerpClipVertex(a, b, t);
+        }
+        else if (!aInside && bInside)
+        {
+            float t = (HE3D_NEAR_Z - a.view.z) / (b.view.z - a.view.z);
+            temp[count++] = LerpClipVertex(a, b, t);
+            temp[count++] = b;
+        }
+    }
+
+    for (int i = 0; i < count; i++)
+    {
+        output[i] = temp[i];
+    }
+    return count;
+}
+
+static void ProjectViewTriangle(const float3 *vv, float2 *ps,
+                                float halfW, float halfH,
+                                float scaleX, float scaleY)
+{
+    for (int i = 0; i < 3; i++)
+    {
+        float invZ = 1.0f / vv[i].z;
+        ps[i] = {halfW + vv[i].x * invZ * scaleX,
+                 halfH - vv[i].y * invZ * scaleY};
+    }
+}
+
+static float ScreenTriangleArea(const float2 *ps)
+{
+    return (ps[1].x - ps[0].x) * (ps[2].y - ps[0].y)
+         - (ps[1].y - ps[0].y) * (ps[2].x - ps[0].x);
+}
 
 // ============================================================================
 // [3] Mesh allocation helpers
@@ -552,22 +663,26 @@ Renderer::Renderer(Window *window, int w, int h)
 {
     int sz = w * h;
     m_colorBuf = new ColorA[sz];
+    m_fxaaBuf = nullptr;
     m_depthBuf = new float[sz];
     if (!m_colorBuf || !m_depthBuf) { m_width = 0; m_height = 0; }
 }
 
 Renderer::~Renderer() {
     delete[] m_colorBuf;
+    delete[] m_fxaaBuf;
     delete[] m_depthBuf;
 }
 
 void Renderer::Resize(int w, int h) {
     delete[] m_colorBuf;
+    delete[] m_fxaaBuf;
     delete[] m_depthBuf;
     m_width  = w;
     m_height = h;
     int sz = w * h;
     m_colorBuf = new ColorA[sz];
+    m_fxaaBuf = nullptr;
     m_depthBuf = new float[sz];
 }
 
@@ -632,31 +747,34 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, float3 c
     int triIndex = 0;
     for (int i = 0; i < vc; i += 3, triIndex++) {
         float3 vw[3], vv[3];
-        float2 ps[3];
-        bool cull = false;
+        ClipVertex clipIn[3];
+        ClipVertex clipOut[4];
 
         for (int j = 0; j < 3; j++) {
             float3 v = objRot.Mul(verts[i + j]) + obj.position;
             vw[j] = v;
             v = camInvRot.Mul(v - cam.position);
             vv[j] = v;
-            if (v.z <= 0.1f) { cull = true; break; }
-            float invZ = 1.0f / v.z;
-            ps[j] = {halfW + v.x * invZ * scaleX,
-                     halfH - v.y * invZ * scaleY};
+            clipIn[j].view = v;
+            clipIn[j].uv = {0, 0};
         }
-        if (cull) continue;
 
-        float area = (ps[1].x - ps[0].x) * (ps[2].y - ps[0].y)
-                   - (ps[1].y - ps[0].y) * (ps[2].x - ps[0].x);
-        if (area <= 0.0f) continue;
+        int clippedCount = ClipTriangleNear(clipIn, clipOut);
+        if (clippedCount < 3) continue;
 
         float3 n = triNormals ? objRot.Mul(triNormals[triIndex])
                               : float3::cross(vw[1] - vw[0], vw[2] - vw[0]).normalizeFast();
         float diff = HE3D_MAX(0.0f, float3::dot(n, lightDir));
         float intens = mainLight.ambient + diff;
 
-        RasterizeSolid(vv, ps, color * intens);
+        for (int k = 1; k < clippedCount - 1; k++)
+        {
+            float3 clippedVv[3] = {clipOut[0].view, clipOut[k].view, clipOut[k + 1].view};
+            float2 ps[3];
+            ProjectViewTriangle(clippedVv, ps, halfW, halfH, scaleX, scaleY);
+            if (ScreenTriangleArea(ps) <= 0.0f) continue;
+            RasterizeSolid(clippedVv, ps, color * intens);
+        }
     }
 }
 
@@ -687,31 +805,37 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, const Te
     int triIndex = 0;
     for (int i = 0; i < vc; i += 3, triIndex++) {
         float3 vw[3], vv[3];
-        float2 tuvs[3], ps[3];
-        bool cull = false;
+        ClipVertex clipIn[3];
+        ClipVertex clipOut[4];
 
         for (int j = 0; j < 3; j++) {
             float3 v = objRot.Mul(verts[i + j]) + obj.position;
             vw[j]   = v;
-            tuvs[j] = uvs[i + j];
             v = camInvRot.Mul(v - cam.position);
             vv[j] = v;
-            if (v.z <= 0.1f) { cull = true; break; }
-            float invZ = 1.0f / v.z;
-            ps[j] = {halfW + v.x * invZ * scaleX,
-                     halfH - v.y * invZ * scaleY};
+            clipIn[j].view = v;
+            clipIn[j].uv = uvs[i + j];
         }
-        if (cull) continue;
 
         float3 ab = vv[1] - vv[0], ac = vv[2] - vv[0];
         if (float3::dot(float3::cross(ab, ac), vv[0]) >= 0) continue;
+
+        int clippedCount = ClipTriangleNear(clipIn, clipOut);
+        if (clippedCount < 3) continue;
 
         float3 n = triNormals ? objRot.Mul(triNormals[triIndex])
                               : float3::cross(vw[1] - vw[0], vw[2] - vw[0]).normalizeFast();
         float diff = HE3D_MAX(0.0f, float3::dot(n, lightDir));
         float intens = mainLight.ambient + diff;
 
-        RasterizeTextured(vv, ps, tuvs, intens, tex);
+        for (int k = 1; k < clippedCount - 1; k++)
+        {
+            float3 clippedVv[3] = {clipOut[0].view, clipOut[k].view, clipOut[k + 1].view};
+            float2 clippedUvs[3] = {clipOut[0].uv, clipOut[k].uv, clipOut[k + 1].uv};
+            float2 ps[3];
+            ProjectViewTriangle(clippedVv, ps, halfW, halfH, scaleX, scaleY);
+            RasterizeTextured(clippedVv, ps, clippedUvs, intens, tex);
+        }
     }
 }
 
@@ -858,8 +982,93 @@ void Renderer::RasterizeTextured(const float3* vv, const float2* ps,
 // ============================================================================
 // [12] Present
 // ============================================================================
+static float he3d_luma(const ColorA& c)
+{
+    return (float)c.r * 0.299f + (float)c.g * 0.587f + (float)c.b * 0.114f;
+}
+
+static unsigned char he3d_blend_u8(unsigned char a, unsigned char b, float t)
+{
+    return (unsigned char)((float)a + ((float)b - (float)a) * t);
+}
+
+bool Renderer::ApplyFxaa()
+{
+    if (m_width <= 2 || m_height <= 2 || !m_colorBuf)
+    {
+        return false;
+    }
+
+    int total = m_width * m_height;
+    if (!m_fxaaBuf)
+    {
+        m_fxaaBuf = new ColorA[total];
+        if (!m_fxaaBuf)
+        {
+            return false;
+        }
+    }
+
+    for (int x = 0; x < m_width; x++)
+    {
+        m_fxaaBuf[x] = m_colorBuf[x];
+        m_fxaaBuf[(m_height - 1) * m_width + x] = m_colorBuf[(m_height - 1) * m_width + x];
+    }
+    for (int y = 1; y < m_height - 1; y++)
+    {
+        m_fxaaBuf[y * m_width] = m_colorBuf[y * m_width];
+        m_fxaaBuf[y * m_width + m_width - 1] = m_colorBuf[y * m_width + m_width - 1];
+    }
+
+    const float edgeThreshold = 20.0f;
+    const float edgeThresholdMin = 8.0f;
+
+    for (int y = 1; y < m_height - 1; y++)
+    {
+        int row = y * m_width;
+        for (int x = 1; x < m_width - 1; x++)
+        {
+            int idx = row + x;
+            const ColorA& center = m_colorBuf[idx];
+            float lM = he3d_luma(center);
+            float lN = he3d_luma(m_colorBuf[idx - m_width]);
+            float lS = he3d_luma(m_colorBuf[idx + m_width]);
+            float lW = he3d_luma(m_colorBuf[idx - 1]);
+            float lE = he3d_luma(m_colorBuf[idx + 1]);
+
+            float lMin = HE3D_MIN(lM, HE3D_MIN(HE3D_MIN(lN, lS), HE3D_MIN(lW, lE)));
+            float lMax = HE3D_MAX(lM, HE3D_MAX(HE3D_MAX(lN, lS), HE3D_MAX(lW, lE)));
+            float contrast = lMax - lMin;
+            if (contrast < HE3D_MAX(edgeThresholdMin, lMax * 0.08f) || contrast < edgeThreshold)
+            {
+                m_fxaaBuf[idx] = center;
+                continue;
+            }
+
+            float horizontal = HE3D_ABS(lN + lS - 2.0f * lM);
+            float vertical = HE3D_ABS(lW + lE - 2.0f * lM);
+            const ColorA& a = horizontal >= vertical ? m_colorBuf[idx - 1] : m_colorBuf[idx - m_width];
+            const ColorA& b = horizontal >= vertical ? m_colorBuf[idx + 1] : m_colorBuf[idx + m_width];
+
+            ColorA out;
+            out.r = he3d_blend_u8(center.r, (unsigned char)(((int)a.r + (int)b.r) >> 1), 0.45f);
+            out.g = he3d_blend_u8(center.g, (unsigned char)(((int)a.g + (int)b.g) >> 1), 0.45f);
+            out.b = he3d_blend_u8(center.b, (unsigned char)(((int)a.b + (int)b.b) >> 1), 0.45f);
+            out.a = center.a;
+            m_fxaaBuf[idx] = out;
+        }
+    }
+
+    return true;
+}
+
 void Renderer::Present() {
-    HE3D::Present(m_window, m_width, m_height, m_colorBuf);
+    const ColorA *pixels = m_colorBuf;
+    if (IsFxaaEnabled() && ApplyFxaa())
+    {
+        pixels = m_fxaaBuf;
+    }
+    HE3D::Present(m_window, m_width, m_height, pixels);
 }
 
 }

@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <thread>
 
 namespace HE3D {
 
@@ -178,6 +179,11 @@ static double ConsoleTimeSeconds()
     return elapsed.count();
 }
 
+static void ConsoleSleepMilliseconds(unsigned long long milliseconds)
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
+}
+
 static void WriteFg(const ColorA& color)
 {
     std::cout << "\033[38;2;" << (int)color.r << ';' << (int)color.g << ';'
@@ -255,6 +261,7 @@ static const Platform g_consolePlatform = {
     ConsolePollEvents,
     ConsoleShouldClose,
     ConsoleTimeSeconds,
+    ConsoleSleepMilliseconds,
     ConsolePresent
 };
 
