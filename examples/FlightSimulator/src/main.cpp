@@ -129,7 +129,7 @@ int main(int argc, char** argv, char** envp) {
         return 1;
     }
     HE3D::SetKeyCallback(win, KeyHandler, nullptr);
-    HE3D::SetFrameRateLimit(60);
+    HE3D::SetFrameRateLimit(0);
     HE3D::SetFxaaEnabled(false);
 
     // ---- Renderer ----
@@ -181,7 +181,7 @@ int main(int argc, char** argv, char** envp) {
     // ---- Input ----
     // These accumulators store smoothed pitch, yaw, and roll input.
     float iP = 0, iY = 0, iR = 0;
-    const float ACC = 5.0f, REC = 0.5f;
+    const float ACC = 4.5f, REC = 2.5f;
 
     // ---- Camera ----
     float  camYaw = 0.0f;
@@ -218,12 +218,12 @@ int main(int argc, char** argv, char** envp) {
         float cR = InputCurve(iR, keys['A']||keys['a'], keys['D']||keys['d'], dt, ACC, REC);
 
         // Flight physics
-        // Apply small quaternion rotations each frame. This avoids Euler-angle
-        // storage and keeps the aircraft orientation stable while it turns.
-        HE3D::quat dP = HE3D::quat::FromEuler({cP * 1.8f * dt, 0, 0});
-        HE3D::quat dY = HE3D::quat::FromEuler({0, cY * 1.2f * dt, 0});
-        HE3D::quat dR = HE3D::quat::FromEuler({0, 0, cR * 2.5f * dt});
-        plane.orientation = (plane.orientation * dY * dP * dR).normalizeFast();
+        // Yaw is applied around the world up axis so Q/E turns do not introduce
+        // roll drift when the wings are level. Pitch and roll remain local.
+        HE3D::quat dP = HE3D::quat::FromEuler({cP * 1.35f * dt, 0, 0});
+        HE3D::quat dY = HE3D::quat::FromEuler({0, cY * 0.95f * dt, 0});
+        HE3D::quat dR = HE3D::quat::FromEuler({0, 0, cR * 1.75f * dt});
+        plane.orientation = (dY * plane.orientation * dP * dR).normalizeFast();
         HE3D::float3 fwd = plane.Forward();
         plane.position = plane.position + fwd * (15.0f * dt);
 

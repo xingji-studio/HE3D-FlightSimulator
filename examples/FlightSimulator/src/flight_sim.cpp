@@ -86,6 +86,23 @@ bool UpdatePlaneMesh(Mesh *mesh, int gridCount, float step, float worldX, float 
     }
 
     float half = (float)(gridCount - 1) * step * 0.5f;
+    const int MAX_CACHED_GRID = 32;
+    float heightCache[MAX_CACHED_GRID * MAX_CACHED_GRID];
+    bool useHeightCache = gridCount <= MAX_CACHED_GRID;
+    if (useHeightCache)
+    {
+        for (int z = 0; z < gridCount; z++)
+        {
+            float lz = z * step - half;
+            float wz = lz + worldZ;
+            for (int x = 0; x < gridCount; x++)
+            {
+                float lx = x * step - half;
+                heightCache[z * gridCount + x] = FlightTerrainHeight(lx + worldX, wz);
+            }
+        }
+    }
+
     mesh->vertCount = 0;
     for (int z = 0; z < gridCount - 1; z++)
     {
@@ -100,10 +117,15 @@ bool UpdatePlaneMesh(Mesh *mesh, int gridCount, float step, float worldX, float 
             float wx1 = lx1 + worldX;
             float wz1 = lz1 + worldZ;
 
-            float3 v1 = {lx0, FlightTerrainHeight(wx0, wz0), lz0};
-            float3 v2 = {lx0, FlightTerrainHeight(wx0, wz1), lz1};
-            float3 v3 = {lx1, FlightTerrainHeight(wx1, wz0), lz0};
-            float3 v4 = {lx1, FlightTerrainHeight(wx1, wz1), lz1};
+            float h1 = useHeightCache ? heightCache[z * gridCount + x] : FlightTerrainHeight(wx0, wz0);
+            float h2 = useHeightCache ? heightCache[(z + 1) * gridCount + x] : FlightTerrainHeight(wx0, wz1);
+            float h3 = useHeightCache ? heightCache[z * gridCount + x + 1] : FlightTerrainHeight(wx1, wz0);
+            float h4 = useHeightCache ? heightCache[(z + 1) * gridCount + x + 1] : FlightTerrainHeight(wx1, wz1);
+
+            float3 v1 = {lx0, h1, lz0};
+            float3 v2 = {lx0, h2, lz1};
+            float3 v3 = {lx1, h3, lz0};
+            float3 v4 = {lx1, h4, lz1};
 
             int i = mesh->vertCount;
             if (i + 6 > mesh->capacity)

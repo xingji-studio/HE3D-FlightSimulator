@@ -2,13 +2,6 @@
 #include "x3api.h"
 #include <time.h>
 
-#ifndef MSG_KEYUP
-#define MSG_KEYUP   9
-#endif
-#ifndef MSG_KEYDOWN
-#define MSG_KEYDOWN 10
-#endif
-
 namespace HE3D {
 
 struct Window {
@@ -21,48 +14,11 @@ struct Window {
     KeyCallback keyCallback;
     void *keyUser;
     bool closeRequested;
-    bool needsFlushTimeEventPump;
-    bool hasKeyUpMessages;
     bool keyDown[256];
     double keyLastSeen[256];
 };
 
 static Window *g_msgWindow = nullptr;
-
-static bool ContainsText(const char *text, const char *needle)
-{
-    if (!text || !needle || !*needle)
-    {
-        return false;
-    }
-
-    for (const char *p = text; *p; ++p)
-    {
-        const char *a = p;
-        const char *b = needle;
-        while (*a && *b && *a == *b)
-        {
-            ++a;
-            ++b;
-        }
-        if (!*b)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool RunningUnderXswl()
-{
-    char version[64];
-    for (unsigned int i = 0; i < sizeof(version); i++)
-    {
-        version[i] = 0;
-    }
-    xapi_GetSystemVersion(version);
-    return ContainsText(version, "Emulator");
-}
 
 static double XapiNowSeconds()
 {
@@ -79,20 +35,17 @@ static int NormalizeXapiKey(UINT64 type, UINT64 lData)
     {
         switch (key)
         {
-            case 128: return 27;   /* XKEY_ESC */
-            case 130: return '\n'; /* XSWL legacy Enter */
-            case '\b': return '\b';
-            default: break;
-        }
-    }
-
-    switch (key)
-    {
         case 128: return 27;   /* XKEY_ESC */
         case 129: return '\b'; /* XKEY_BACKSPACE */
         case 130: return '\t'; /* XKEY_TAB */
         case 131: return '\n'; /* XKEY_ENTER */
         default: break;
+        }
+    }
+
+    if (key >= 'A' && key <= 'Z')
+    {
+        key += 'a' - 'A';
     }
 
     return key;
@@ -106,41 +59,21 @@ static void XapiMsgHandler(UINT64 type, UINT64 hData, UINT64 lData)
     }
 
     (void)hData;
-    if (type == MSG_KEYDOWN || type == MSG_KEYUP)
-    {
-        int key = NormalizeXapiKey(type, lData);
-        bool pressed = type == MSG_KEYDOWN;
-        if (key == 27 && pressed)
-        {
-            g_msgWindow->closeRequested = true;
-        }
-        if (key >= 0 && key < 256)
-        {
-            g_msgWindow->hasKeyUpMessages = true;
-            g_msgWindow->keyDown[key] = pressed;
-            g_msgWindow->keyLastSeen[key] = pressed ? XapiNowSeconds() : 0.0;
-        }
-        g_msgWindow->keyCallback(key, pressed, g_msgWindow->keyUser);
-        return;
-    }
-
     if (type == MSG_CHAR || type == MSG_SPCHAR)
     {
-        if (g_msgWindow->hasKeyUpMessages)
-        {
-            return;
-        }
-
         int key = NormalizeXapiKey(type, lData);
         if (key == 27)
         {
             g_msgWindow->closeRequested = true;
         }
-        if (key >= 0 && key < 256 && !g_msgWindow->keyDown[key])
+        if (key >= 0 && key < 256)
         {
-            g_msgWindow->keyDown[key] = true;
             g_msgWindow->keyLastSeen[key] = XapiNowSeconds();
-            g_msgWindow->keyCallback(key, true, g_msgWindow->keyUser);
+            if (!g_msgWindow->keyDown[key])
+            {
+                g_msgWindow->keyDown[key] = true;
+                g_msgWindow->keyCallback(key, true, g_msgWindow->keyUser);
+            }
         }
     }
 }
@@ -220,8 +153,6 @@ static Window *XapiCreateWindow(const WindowDesc *desc)
     window->keyCallback = nullptr;
     window->keyUser = nullptr;
     window->closeRequested = false;
-    window->needsFlushTimeEventPump = RunningUnderXswl();
-    window->hasKeyUpMessages = false;
     for (int i = 0; i < 256; i++)
     {
         window->keyDown[i] = false;
@@ -237,6 +168,7 @@ static Window *XapiCreateWindow(const WindowDesc *desc)
 
     g_msgWindow = window;
     SetMsgPrcor(window->handle, XapiMsgHandler);
+    xapi_FlushTime();
     return window;
 }
 
@@ -279,22 +211,19 @@ static void XapiSetKeyCallback(Window *window, KeyCallback callback, void *user)
 
 static void XapiPollEvents(Window *window)
 {
-    if (window && window->needsFlushTimeEventPump)
+    if (!window || !window->keyCallback)
     {
-        xapi_FlushTime();
+        return;
     }
 
-    if (window && window->keyCallback)
+    double now = XapiNowSeconds();
+    const double releaseTimeout = 0.16;
+    for (int i = 0; i < 256; i++)
     {
-        double now = XapiNowSeconds();
-        const double release_timeout = window->hasKeyUpMessages ? 0.35 : 0.20;
-        for (int i = 0; i < 256; i++)
+        if (window->keyDown[i] && (now - window->keyLastSeen[i]) > releaseTimeout)
         {
-            if (window->keyDown[i] && (now - window->keyLastSeen[i]) > release_timeout)
-            {
-                window->keyDown[i] = false;
-                window->keyCallback(i, false, window->keyUser);
-            }
+            window->keyDown[i] = false;
+            window->keyCallback(i, false, window->keyUser);
         }
     }
 }

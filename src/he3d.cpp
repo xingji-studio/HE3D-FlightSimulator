@@ -213,6 +213,14 @@ struct Mat3
     }
 };
 
+static bool QuatIsIdentity(const quat& q)
+{
+    return HE3D_ABS(q.x) < 0.000001f &&
+           HE3D_ABS(q.y) < 0.000001f &&
+           HE3D_ABS(q.z) < 0.000001f &&
+           HE3D_ABS(q.w - 1.0f) < 0.000001f;
+}
+
 static const float HE3D_NEAR_Z = 0.1f;
 
 struct ClipVertex
@@ -281,6 +289,15 @@ static float ScreenTriangleArea(const float2 *ps)
 {
     return (ps[1].x - ps[0].x) * (ps[2].y - ps[0].y)
          - (ps[1].y - ps[0].y) * (ps[2].x - ps[0].x);
+}
+
+static bool ScreenTriangleOutside(const float2 *ps, int width, int height)
+{
+    if (ps[0].x < 0.0f && ps[1].x < 0.0f && ps[2].x < 0.0f) return true;
+    if (ps[0].x >= (float)width && ps[1].x >= (float)width && ps[2].x >= (float)width) return true;
+    if (ps[0].y < 0.0f && ps[1].y < 0.0f && ps[2].y < 0.0f) return true;
+    if (ps[0].y >= (float)height && ps[1].y >= (float)height && ps[2].y >= (float)height) return true;
+    return false;
 }
 
 // ============================================================================
@@ -542,7 +559,8 @@ float3 Texture::Sample(float u, float v) const {
     v = fracf(v);
     int x = HE3D_CLAMP((int)(u * width),  0, width  - 1);
     int y = HE3D_CLAMP((int)(v * height), 0, height - 1);
-    return pixels[y * width + x];
+    const ColorA& c = pixels[y * width + x];
+    return {c.r * (1.0f / 255.0f), c.g * (1.0f / 255.0f), c.b * (1.0f / 255.0f)};
 }
 
 // ============================================================================
@@ -627,7 +645,7 @@ Texture *Texture::LoadBMP(const char *filename)
 
     tex->width  = bw;
     tex->height = texHeight;
-    float3 *pbuf = new float3[tex->width * tex->height];
+    ColorA *pbuf = new ColorA[tex->width * tex->height];
     if (!pbuf)
     {
         delete tex;
@@ -641,9 +659,9 @@ Texture *Texture::LoadBMP(const char *filename)
         for (int y = 0; y < tex->height; y++) {
             int sY = topDown ? y : (tex->height - 1 - y);
             const unsigned char *row = src + sY * rowSize;
-            float3 *dst = pbuf + y * tex->width;
+            ColorA *dst = pbuf + y * tex->width;
             for (int x = 0; x < tex->width; x++) {
-                dst[x] = {row[2] / 255.0f, row[1] / 255.0f, row[0] / 255.0f};
+                dst[x] = {row[2], row[1], row[0], 255};
                 row += bytesPerPixel;
             }
         }
@@ -737,7 +755,8 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, float3 c
     float scaleX    = fovScale * halfW / ((float)m_width / (float)m_height);
     float scaleY    = fovScale * halfH;
     float3 lightDir = mainLight.direction.normalizeFast();
-    Mat3 objRot     = Mat3::FromQuat(obj.orientation);
+    bool identityObjRot = QuatIsIdentity(obj.orientation);
+    Mat3 objRot     = identityObjRot ? Mat3{1,0,0,0,1,0,0,0,1} : Mat3::FromQuat(obj.orientation);
     Mat3 camInvRot  = Mat3::FromQuat(cam.orientation).Transpose();
 
     float3* verts = obj.mesh->vertices;
@@ -751,7 +770,8 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, float3 c
         ClipVertex clipOut[4];
 
         for (int j = 0; j < 3; j++) {
-            float3 v = objRot.Mul(verts[i + j]) + obj.position;
+            float3 v = identityObjRot ? (verts[i + j] + obj.position)
+                                      : (objRot.Mul(verts[i + j]) + obj.position);
             vw[j] = v;
             v = camInvRot.Mul(v - cam.position);
             vv[j] = v;
@@ -762,7 +782,7 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, float3 c
         int clippedCount = ClipTriangleNear(clipIn, clipOut);
         if (clippedCount < 3) continue;
 
-        float3 n = triNormals ? objRot.Mul(triNormals[triIndex])
+        float3 n = triNormals ? (identityObjRot ? triNormals[triIndex] : objRot.Mul(triNormals[triIndex]))
                               : float3::cross(vw[1] - vw[0], vw[2] - vw[0]).normalizeFast();
         float diff = HE3D_MAX(0.0f, float3::dot(n, lightDir));
         float intens = mainLight.ambient + diff;
@@ -772,6 +792,7 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, float3 c
             float3 clippedVv[3] = {clipOut[0].view, clipOut[k].view, clipOut[k + 1].view};
             float2 ps[3];
             ProjectViewTriangle(clippedVv, ps, halfW, halfH, scaleX, scaleY);
+            if (ScreenTriangleOutside(ps, m_width, m_height)) continue;
             if (ScreenTriangleArea(ps) <= 0.0f) continue;
             RasterizeSolid(clippedVv, ps, color * intens);
         }
@@ -794,7 +815,8 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, const Te
     float scaleX    = fovScale * halfW / ((float)m_width / (float)m_height);
     float scaleY    = fovScale * halfH;
     float3 lightDir = mainLight.direction.normalizeFast();
-    Mat3 objRot     = Mat3::FromQuat(obj.orientation);
+    bool identityObjRot = QuatIsIdentity(obj.orientation);
+    Mat3 objRot     = identityObjRot ? Mat3{1,0,0,0,1,0,0,0,1} : Mat3::FromQuat(obj.orientation);
     Mat3 camInvRot  = Mat3::FromQuat(cam.orientation).Transpose();
 
     float3* verts = obj.mesh->vertices;
@@ -809,7 +831,8 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, const Te
         ClipVertex clipOut[4];
 
         for (int j = 0; j < 3; j++) {
-            float3 v = objRot.Mul(verts[i + j]) + obj.position;
+            float3 v = identityObjRot ? (verts[i + j] + obj.position)
+                                      : (objRot.Mul(verts[i + j]) + obj.position);
             vw[j]   = v;
             v = camInvRot.Mul(v - cam.position);
             vv[j] = v;
@@ -823,7 +846,7 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, const Te
         int clippedCount = ClipTriangleNear(clipIn, clipOut);
         if (clippedCount < 3) continue;
 
-        float3 n = triNormals ? objRot.Mul(triNormals[triIndex])
+        float3 n = triNormals ? (identityObjRot ? triNormals[triIndex] : objRot.Mul(triNormals[triIndex]))
                               : float3::cross(vw[1] - vw[0], vw[2] - vw[0]).normalizeFast();
         float diff = HE3D_MAX(0.0f, float3::dot(n, lightDir));
         float intens = mainLight.ambient + diff;
@@ -834,6 +857,8 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, const Te
             float2 clippedUvs[3] = {clipOut[0].uv, clipOut[k].uv, clipOut[k + 1].uv};
             float2 ps[3];
             ProjectViewTriangle(clippedVv, ps, halfW, halfH, scaleX, scaleY);
+            if (ScreenTriangleOutside(ps, m_width, m_height)) continue;
+            if (ScreenTriangleArea(ps) <= 0.0f) continue;
             RasterizeTextured(clippedVv, ps, clippedUvs, intens, tex);
         }
     }
@@ -852,6 +877,7 @@ void Renderer::RasterizeSolid(const float3* vv, const float2* ps, float3 color) 
     int mxX = HE3D_MIN(m_width  - 1, (int)maxXf + 1);
     int mnY = HE3D_MAX(0,             (int)minYf);
     int mxY = HE3D_MIN(m_height - 1, (int)maxYf + 1);
+    if (mnX > mxX || mnY > mxY) return;
 
     float x0 = ps[0].x, y0 = ps[0].y;
     float x1 = ps[1].x, y1 = ps[1].y;
@@ -863,7 +889,9 @@ void Renderer::RasterizeSolid(const float3* vv, const float2* ps, float3 color) 
 
     float dw0 = (y1 - y2) * invA;
     float dw1 = (y2 - y0) * invA;
+    float dw2 = -dw0 - dw1;
     float iz0 = 1.0f / vv[0].z, iz1 = 1.0f / vv[1].z, iz2 = 1.0f / vv[2].z;
+    float dizDx = dw0 * iz0 + dw1 * iz1 + dw2 * iz2;
 
     // Pre-clamp color once, set fields by name for clarity
     ColorA xc;
@@ -882,12 +910,12 @@ void Renderer::RasterizeSolid(const float3* vv, const float2* ps, float3 color) 
         float py = (float)y + 0.5f, px0 = (float)mnX + 0.5f;
         float w0 = ((x1 - px0) * (y2 - py) - (y1 - py) * (x2 - px0)) * invA;
         float w1 = ((x2 - px0) * (y0 - py) - (y2 - py) * (x0 - px0)) * invA;
+        float w2 = 1.0f - w0 - w1;
+        float ciz = w0 * iz0 + w1 * iz1 + w2 * iz2;
 
         int rb = y * stride;
         for (int x = mnX; x <= mxX; x++) {
-            float w2 = 1.0f - w0 - w1;
             if (w0 >= 0.0f && w1 >= 0.0f && w2 >= 0.0f) {
-                float ciz = w0 * iz0 + w1 * iz1 + w2 * iz2;
                 if (ciz > 0.000001f) {
                     int idx = rb + x;
                     // Depth buffer stores 1/z: closer = larger value
@@ -897,7 +925,10 @@ void Renderer::RasterizeSolid(const float3* vv, const float2* ps, float3 color) 
                     }
                 }
             }
-            w0 += dw0; w1 += dw1;
+            w0 += dw0;
+            w1 += dw1;
+            w2 += dw2;
+            ciz += dizDx;
         }
     }
 }
@@ -916,6 +947,7 @@ void Renderer::RasterizeTextured(const float3* vv, const float2* ps,
     int mxX = HE3D_MIN(m_width  - 1, (int)maxXf + 1);
     int mnY = HE3D_MAX(0,             (int)minYf);
     int mxY = HE3D_MIN(m_height - 1, (int)maxYf + 1);
+    if (mnX > mxX || mnY > mxY) return;
 
     float x0 = ps[0].x, y0 = ps[0].y;
     float x1 = ps[1].x, y1 = ps[1].y;
@@ -927,11 +959,18 @@ void Renderer::RasterizeTextured(const float3* vv, const float2* ps,
 
     float dw0 = (y1 - y2) * invA;
     float dw1 = (y2 - y0) * invA;
+    float dw2 = -dw0 - dw1;
     float iz0 = 1.0f / vv[0].z, iz1 = 1.0f / vv[1].z, iz2 = 1.0f / vv[2].z;
     float2 uz0 = uvs[0] * iz0, uz1 = uvs[1] * iz1, uz2 = uvs[2] * iz2;
+    float dizDx = dw0 * iz0 + dw1 * iz1 + dw2 * iz2;
+    float duzDx = dw0 * uz0.x + dw1 * uz1.x + dw2 * uz2.x;
+    float dvzDx = dw0 * uz0.y + dw1 * uz1.y + dw2 * uz2.y;
 
     float3 lc = mainLight.color * intens;
-    float3* tp  = tex.pixels;
+    int lr = HE3D_CLAMP((int)(lc.r * 256.0f), 0, 512);
+    int lg = HE3D_CLAMP((int)(lc.g * 256.0f), 0, 512);
+    int lb = HE3D_CLAMP((int)(lc.b * 256.0f), 0, 512);
+    ColorA* tp  = tex.pixels;
     int     tw  = tex.width;
     int     th  = tex.height;
     int     twm1 = tw - 1;
@@ -945,12 +984,14 @@ void Renderer::RasterizeTextured(const float3* vv, const float2* ps,
         float py = (float)y + 0.5f, px0 = (float)mnX + 0.5f;
         float w0 = ((x1 - px0) * (y2 - py) - (y1 - py) * (x2 - px0)) * invA;
         float w1 = ((x2 - px0) * (y0 - py) - (y2 - py) * (x0 - px0)) * invA;
+        float w2 = 1.0f - w0 - w1;
+        float ciz = w0 * iz0 + w1 * iz1 + w2 * iz2;
+        float cuz = w0 * uz0.x + w1 * uz1.x + w2 * uz2.x;
+        float cvz = w0 * uz0.y + w1 * uz1.y + w2 * uz2.y;
 
         int rb = y * stride;
         for (int x = mnX; x <= mxX; x++) {
-            float w2 = 1.0f - w0 - w1;
             if (w0 >= 0.0f && w1 >= 0.0f && w2 >= 0.0f) {
-                float ciz = w0 * iz0 + w1 * iz1 + w2 * iz2;
                 if (ciz > 0.000001f) {
                     int idx = rb + x;
                     // Depth buffer stores 1/z: closer = larger value
@@ -958,23 +999,28 @@ void Renderer::RasterizeTextured(const float3* vv, const float2* ps,
                         db[idx] = ciz;
                         float invCiz = 1.0f / ciz;
                         // Perspective-correct UV with branchless fractional wrap
-                        float u = (w0 * uz0.x + w1 * uz1.x + w2 * uz2.x) * invCiz;
-                        float v = (w0 * uz0.y + w1 * uz1.y + w2 * uz2.y) * invCiz;
+                        float u = cuz * invCiz;
+                        float v = cvz * invCiz;
                         if (u < 0.0f || u >= 1.0f) u = fracf(u);
                         if (v < 0.0f || v >= 1.0f) v = fracf(v);
                         int tx = (int)(u * tw);
                         int ty = (int)(v * th);
                         tx = HE3D_CLAMP(tx, 0, twm1);
                         ty = HE3D_CLAMP(ty, 0, thm1);
-                        float3 tl = tp[ty * tw + tx] * lc;
-                        cbuf[idx].r = (unsigned char)HE3D_CLAMP((int)(tl.r * 255.0f), 0, 255);
-                        cbuf[idx].g = (unsigned char)HE3D_CLAMP((int)(tl.g * 255.0f), 0, 255);
-                        cbuf[idx].b = (unsigned char)HE3D_CLAMP((int)(tl.b * 255.0f), 0, 255);
+                        ColorA texel = tp[ty * tw + tx];
+                        cbuf[idx].r = (unsigned char)HE3D_CLAMP(((int)texel.r * lr) >> 8, 0, 255);
+                        cbuf[idx].g = (unsigned char)HE3D_CLAMP(((int)texel.g * lg) >> 8, 0, 255);
+                        cbuf[idx].b = (unsigned char)HE3D_CLAMP(((int)texel.b * lb) >> 8, 0, 255);
                         cbuf[idx].a = 255;
                     }
                 }
             }
-            w0 += dw0; w1 += dw1;
+            w0 += dw0;
+            w1 += dw1;
+            w2 += dw2;
+            ciz += dizDx;
+            cuz += duzDx;
+            cvz += dvzDx;
         }
     }
 }
@@ -982,14 +1028,14 @@ void Renderer::RasterizeTextured(const float3* vv, const float2* ps,
 // ============================================================================
 // [12] Present
 // ============================================================================
-static float he3d_luma(const ColorA& c)
+static int he3d_luma(const ColorA& c)
 {
-    return (float)c.r * 0.299f + (float)c.g * 0.587f + (float)c.b * 0.114f;
+    return ((int)c.r * 77 + (int)c.g * 150 + (int)c.b * 29) >> 8;
 }
 
-static unsigned char he3d_blend_u8(unsigned char a, unsigned char b, float t)
+static unsigned char he3d_blend_u8(unsigned char a, unsigned char b)
 {
-    return (unsigned char)((float)a + ((float)b - (float)a) * t);
+    return (unsigned char)(((int)a * 141 + (int)b * 115) >> 8);
 }
 
 bool Renderer::ApplyFxaa()
@@ -1020,8 +1066,8 @@ bool Renderer::ApplyFxaa()
         m_fxaaBuf[y * m_width + m_width - 1] = m_colorBuf[y * m_width + m_width - 1];
     }
 
-    const float edgeThreshold = 20.0f;
-    const float edgeThresholdMin = 8.0f;
+    const int edgeThreshold = 20;
+    const int edgeThresholdMin = 8;
 
     for (int y = 1; y < m_height - 1; y++)
     {
@@ -1030,30 +1076,30 @@ bool Renderer::ApplyFxaa()
         {
             int idx = row + x;
             const ColorA& center = m_colorBuf[idx];
-            float lM = he3d_luma(center);
-            float lN = he3d_luma(m_colorBuf[idx - m_width]);
-            float lS = he3d_luma(m_colorBuf[idx + m_width]);
-            float lW = he3d_luma(m_colorBuf[idx - 1]);
-            float lE = he3d_luma(m_colorBuf[idx + 1]);
+            int lM = he3d_luma(center);
+            int lN = he3d_luma(m_colorBuf[idx - m_width]);
+            int lS = he3d_luma(m_colorBuf[idx + m_width]);
+            int lW = he3d_luma(m_colorBuf[idx - 1]);
+            int lE = he3d_luma(m_colorBuf[idx + 1]);
 
-            float lMin = HE3D_MIN(lM, HE3D_MIN(HE3D_MIN(lN, lS), HE3D_MIN(lW, lE)));
-            float lMax = HE3D_MAX(lM, HE3D_MAX(HE3D_MAX(lN, lS), HE3D_MAX(lW, lE)));
-            float contrast = lMax - lMin;
-            if (contrast < HE3D_MAX(edgeThresholdMin, lMax * 0.08f) || contrast < edgeThreshold)
+            int lMin = HE3D_MIN(lM, HE3D_MIN(HE3D_MIN(lN, lS), HE3D_MIN(lW, lE)));
+            int lMax = HE3D_MAX(lM, HE3D_MAX(HE3D_MAX(lN, lS), HE3D_MAX(lW, lE)));
+            int contrast = lMax - lMin;
+            if (contrast < HE3D_MAX(edgeThresholdMin, (lMax * 20) >> 8) || contrast < edgeThreshold)
             {
                 m_fxaaBuf[idx] = center;
                 continue;
             }
 
-            float horizontal = HE3D_ABS(lN + lS - 2.0f * lM);
-            float vertical = HE3D_ABS(lW + lE - 2.0f * lM);
+            int horizontal = HE3D_ABS(lN + lS - 2 * lM);
+            int vertical = HE3D_ABS(lW + lE - 2 * lM);
             const ColorA& a = horizontal >= vertical ? m_colorBuf[idx - 1] : m_colorBuf[idx - m_width];
             const ColorA& b = horizontal >= vertical ? m_colorBuf[idx + 1] : m_colorBuf[idx + m_width];
 
             ColorA out;
-            out.r = he3d_blend_u8(center.r, (unsigned char)(((int)a.r + (int)b.r) >> 1), 0.45f);
-            out.g = he3d_blend_u8(center.g, (unsigned char)(((int)a.g + (int)b.g) >> 1), 0.45f);
-            out.b = he3d_blend_u8(center.b, (unsigned char)(((int)a.b + (int)b.b) >> 1), 0.45f);
+            out.r = he3d_blend_u8(center.r, (unsigned char)(((int)a.r + (int)b.r) >> 1));
+            out.g = he3d_blend_u8(center.g, (unsigned char)(((int)a.g + (int)b.g) >> 1));
+            out.b = he3d_blend_u8(center.b, (unsigned char)(((int)a.b + (int)b.b) >> 1));
             out.a = center.a;
             m_fxaaBuf[idx] = out;
         }

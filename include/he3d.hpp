@@ -60,7 +60,7 @@ class Texture {
 public:
     int     width;
     int     height;
-    float3 *pixels; // new[]-allocated, width*height
+    ColorA *pixels; // new[]-allocated, width*height
     bool    valid;
 
     Texture() : width(0), height(0), pixels(nullptr), valid(false) {}
