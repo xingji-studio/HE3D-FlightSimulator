@@ -1,27 +1,24 @@
 # HE3D
 
-[中文](README.zh-CN.md)
+HE3D 是一个 C++11 软件 3D 渲染器。当前主要示例是飞行模拟器，可以构建为 XJ380/XAPI 程序，也可以构建为 SDL3 后端的程序。
 
-HE3D is a C++11 software 3D renderer. The main sample is a flight simulator
-that builds for XJ380/XAPI or SDL3.
+## 构建
 
-## Build
-
-XAPI:
+XAPI：
 
 ```sh
 cmake -S . -B build -DHE3D_BACKEND=XAPI
 cmake --build build
 ```
 
-SDL3:
+SDL3：
 
 ```sh
 cmake -S . -B build -DHE3D_BACKEND=SDL3
 cmake --build build
 ```
 
-Console:
+控制台：
 
 ```sh
 cmake -S . -B build -DHE3D_BACKEND=CONSOLE
@@ -29,19 +26,19 @@ cmake --build build
 ./build/he3d_flight_simulator_console
 ```
 
-The executable and copied assets are written to `build/`.
+可执行文件和资源文件会生成到 `build/`。
 
-## Controls
+## 控制
 
-- `W` / `S`: pitch
-- `Q` / `E`: yaw
-- `A` / `D`: roll
-- `Esc`: quit
+- `W` / `S`：俯仰
+- `Q` / `E`：偏航
+- `A` / `D`：滚转
+- `Esc`：退出
 
-## Layout
+## 目录
 
-- `include/`: public engine headers
-- `src/`: renderer, loaders, and platform backends
-- `examples/FlightSimulator/`: flight simulator sample
-- `xj380/include/`: XJ380 headers for the XAPI build
-- `docs/technical.md`: technical manual and API reference
+- `include/`：引擎公开头文件
+- `src/`：渲染器、加载器和平台后端
+- `examples/FlightSimulator/`：飞行模拟器示例
+- `xj380/include/`：XAPI 构建使用的 XJ380 头文件
+- `docs/technical.md`：技术手册和 API 参考

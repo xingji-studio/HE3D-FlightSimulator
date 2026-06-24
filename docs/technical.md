@@ -1,12 +1,10 @@
-# HE3D Technical Manual
+# HE3D 技术手册
 
-This document covers the public interfaces shipped by HE3D: build options,
-headers, platform services, math types, renderer objects, asset formats, and
-the flight simulator sample.
+本文档列出 HE3D 对用户开放的接口：构建选项、公开头文件、平台服务、数学类型、渲染对象、资源格式和飞行模拟器示例。
 
-## Build
+## 构建
 
-HE3D builds one backend at a time through CMake.
+HE3D 通过 CMake 一次构建一个后端。
 
 ```sh
 cmake -S . -B build -DHE3D_BACKEND=XAPI
@@ -18,30 +16,27 @@ cmake -S . -B build -DHE3D_BACKEND=SDL3
 cmake --build build
 ```
 
-`HE3D_BACKEND` accepts:
+`HE3D_BACKEND` 可选值：
 
-- `XAPI`: builds `he3d_flight_simulator.elf` for XJ380.
-- `SDL3`: builds `he3d_flight_simulator_sdl3` for desktop SDL3.
-- `CONSOLE`: builds `he3d_flight_simulator_console`, using the console backend
-  to present the flight simulator in a terminal.
+- `XAPI`：构建 XJ380 程序 `he3d_flight_simulator.elf`。
+- `SDL3`：构建桌面 SDL3 程序 `he3d_flight_simulator_sdl3`。
+- `CONSOLE`：构建 `he3d_flight_simulator_console`，使用控制台后端在终端里显示飞行模拟器。
 
-Generated executables and copied assets are placed in `build/`. Reconfigure the
-same `build/` directory when switching backend.
+生成的可执行文件和复制的资源文件都放在 `build/`。切换后端时重新配置同一个 `build/` 目录。
 
-## Public Headers
+## 公开头文件
 
-- `include/he3d.hpp`: engine objects, renderer, mesh, texture, camera, light.
-- `include/he3d_platform.hpp`: platform interface used by the engine.
-- `include/he3d_math.h`: scalar math, vectors, quaternions, and matrix type.
+- `include/he3d.hpp`：引擎对象、渲染器、网格、纹理、相机、光照。
+- `include/he3d_platform.hpp`：引擎使用的平台接口。
+- `include/he3d_math.h`：标量数学、向量、四元数、矩阵类型。
 
-All public C++ types are in namespace `HE3D`. The global `new` and `delete`
-operators are provided by HE3D and forward allocation to the active platform.
+公开 C++ 类型都位于 `HE3D` 命名空间。HE3D 提供全局 `new` 和 `delete`，内存分配会转发到当前平台。
 
-## Math API
+## 数学 API
 
-`he3d_math.h` is freestanding and does not require libm.
+`he3d_math.h` 可在 freestanding 环境使用，不依赖 libm。
 
-Scalar functions:
+标量函数：
 
 - `fabsf(float x) -> float`
 - `abs(int x) -> int`
@@ -50,14 +45,14 @@ Scalar functions:
 - `roundf(float x) -> float`
 - `fracf(float x) -> float`
 - `sqrtf(float x) -> float`
-- `rsqrtf(float x) -> float`: fast inverse square root.
+- `rsqrtf(float x) -> float`：快速平方根倒数。
 - `sinf(float x) -> float`
 - `cosf(float x) -> float`
 - `tanf(float x) -> float`
 - `sincosf(float x, float *s, float *c)`
 - `atan2f(float y, float x) -> float`
 
-Macros and constants:
+宏和常量：
 
 - `HE3D_MIN(a, b)`
 - `HE3D_MAX(a, b)`
@@ -68,7 +63,7 @@ Macros and constants:
 - `HE3D_TAU`
 - `HE3D_PI_DIV_2`
 
-`float2` stores two scalar values:
+`float2` 保存两个标量：
 
 ```cpp
 struct float2 {
@@ -76,14 +71,14 @@ struct float2 {
 };
 ```
 
-Supported operations:
+支持的操作：
 
-- constructor: `float2(float x = 0, float y = 0)`
-- `+`, `-`
-- scalar `*` and `/`
-- component-wise `*`
+- 构造：`float2(float x = 0, float y = 0)`
+- `+`、`-`
+- 标量 `*` 和 `/`
+- 分量相乘 `*`
 
-`float3` stores a vector or RGB color:
+`float3` 保存三维向量或 RGB 颜色：
 
 ```cpp
 struct float3 {
@@ -94,24 +89,23 @@ struct float3 {
 };
 ```
 
-Supported operations:
+支持的操作：
 
-- constructor: `float3(float x = 0, float y = 0, float z = 0)`
-- `+`, `-`, unary `-`
-- scalar `*` and `/`
-- component-wise `*`
+- 构造：`float3(float x = 0, float y = 0, float z = 0)`
+- `+`、`-`、一元 `-`
+- 标量 `*` 和 `/`
+- 分量相乘 `*`
 - `lengthSq()`
 - `length()`
 - `normalize()`
-- `normalizeFast()`: uses `rsqrtf`; intended for hot paths where a small
-  normalization error is acceptable.
+- `normalizeFast()`：使用 `rsqrtf`，用于允许少量归一化误差的热路径。
 - `float3::dot(a, b)`
 - `float3::cross(a, b)`
 - `float3::lerp(a, b, t)`
-- `rotateX(angle)`, `rotateY(angle)`, `rotateZ(angle)`
-- `rotateX(s, c)`, `rotateY(s, c)`, `rotateZ(s, c)`
+- `rotateX(angle)`、`rotateY(angle)`、`rotateZ(angle)`
+- `rotateX(s, c)`、`rotateY(s, c)`、`rotateZ(s, c)`
 
-`quat` represents rotation:
+`quat` 表示旋转：
 
 ```cpp
 struct quat {
@@ -119,22 +113,20 @@ struct quat {
 };
 ```
 
-Supported operations:
+支持的操作：
 
-- constructor: `quat(float w = 1, float x = 0, float y = 0, float z = 0)`
+- 构造：`quat(float w = 1, float x = 0, float y = 0, float z = 0)`
 - `quat::FromEuler(float3 euler)`
 - `quat::FromEulerFast(float3 euler)`
 - `normalize()`
-- `normalizeFast()`: uses `rsqrtf`; intended for frame-to-frame orientation
-  cleanup rather than exact math.
-- quaternion multiplication with `operator*`
+- `normalizeFast()`：使用 `rsqrtf`，用于每帧姿态清理，不作为精确数学接口。
+- 四元数乘法 `operator*`
 - `rotate(const float3& v)`
 - `inverse()`
 
-Euler angles are in radians. `FromEuler` uses X as pitch, Y as yaw, and Z as
-roll.
+欧拉角单位是弧度。`FromEuler` 使用 X 作为 pitch，Y 作为 yaw，Z 作为 roll。
 
-`float4x4` is a 4x4 identity-initialized matrix:
+`float4x4` 是初始化为单位矩阵的 4x4 矩阵：
 
 ```cpp
 struct float4x4 {
@@ -142,12 +134,11 @@ struct float4x4 {
 };
 ```
 
-## Platform API
+## 平台 API
 
-The platform layer supplies memory, file access, windows, input, time, and
-framebuffer presentation.
+平台层向引擎提供内存、文件、窗口、输入、时间和 framebuffer 提交。
 
-Pixel layout:
+像素布局：
 
 ```cpp
 struct ColorA {
@@ -158,7 +149,7 @@ struct ColorA {
 };
 ```
 
-Loaded file data:
+文件数据：
 
 ```cpp
 struct FileData {
@@ -168,7 +159,7 @@ struct FileData {
 };
 ```
 
-Window creation:
+窗口创建：
 
 ```cpp
 struct Window;
@@ -181,13 +172,13 @@ struct WindowDesc {
 };
 ```
 
-Keyboard callbacks:
+键盘回调：
 
 ```cpp
 typedef void (*KeyCallback)(int key, bool pressed, void *user);
 ```
 
-Platform function table:
+平台函数表：
 
 ```cpp
 struct Platform {
@@ -209,7 +200,7 @@ struct Platform {
 };
 ```
 
-Platform entry points:
+平台入口：
 
 - `GetPlatform() -> const Platform *`
 - `SetPlatform(const Platform *platform)`
@@ -233,22 +224,15 @@ Platform entry points:
 - `PaceFrame(double frameStart)`
 - `Present(Window *window, int width, int height, const ColorA *pixels)`
 
-Files returned by `LoadFile` remain valid until `CloseFile` is called. Windows
-returned by `CreateWindow` must be released with `DestroyWindow`.
+`LoadFile` 返回的数据在调用 `CloseFile` 前有效。`CreateWindow` 返回的窗口必须用 `DestroyWindow` 释放。
 
-## Custom Backend
+## 自定义后端
 
-A backend is one translation unit that provides a `Platform` table and, when it
-is the built-in backend for a target, defines `HE3D::GetBuiltinPlatform()`.
+后端是一个提供 `Platform` 函数表的编译单元。作为目标内置后端使用时，它还要定义 `HE3D::GetBuiltinPlatform()`。
 
-The repository includes a complete console backend in
-`src/platform/he3d_platform_console.cpp`. It uses the C++ standard library for
-allocation, files, time, and terminal output. It presents the renderer buffer
-with ANSI 24-bit color and the upper-half block character: the foreground color
-is the top sampled pixel and the background color is the sampled pixel below it.
-The backend scales the framebuffer to a terminal-sized view before writing it.
+仓库里已经包含一个完整控制台后端：`src/platform/he3d_platform_console.cpp`。它使用 C++ 标准库处理内存、文件、时间和终端输出。它用 ANSI 24-bit 颜色和上半格字符显示 renderer buffer：前景色是采样后的上方像素，背景色是采样后的下方像素。后端会先把 framebuffer 缩放到适合终端的尺寸再输出。
 
-Build and run it with:
+构建和运行：
 
 ```sh
 cmake -S . -B build -DHE3D_BACKEND=CONSOLE
@@ -256,20 +240,14 @@ cmake --build build
 ./build/he3d_flight_simulator_console
 ```
 
-There are two supported ways to use a custom backend:
+自定义后端有两种接入方式：
 
-- Link it as the target backend by defining `GetBuiltinPlatform()` in the custom
-  backend source file. Do not link another source file that also defines
-  `GetBuiltinPlatform()`.
-- Link an existing backend and call `SetPlatform(&myPlatform)` before creating a
-  window, loading assets, or allocating engine objects.
+- 作为目标后端链接：在自定义后端源文件里定义 `GetBuiltinPlatform()`。同一个目标里不要再链接其他同样定义 `GetBuiltinPlatform()` 的后端文件。
+- 运行时替换平台：链接已有后端，然后在创建窗口、加载资源或分配引擎对象之前调用 `SetPlatform(&myPlatform)`。
 
-Backend files normally use this shape. The console backend is the concrete
-version of this pattern:
+后端文件通常使用下面的结构。控制台后端就是这个结构的完整实现：
 
-`Window` is intentionally opaque in `he3d_platform.hpp`. The backend defines the
-real `struct Window` in its own source file. Application code only receives a
-`Window *` from `CreateWindow` and passes that pointer back to HE3D functions.
+`he3d_platform.hpp` 里的 `Window` 是不透明类型。真正的 `struct Window` 只在后端自己的源文件里定义。应用代码只从 `CreateWindow` 拿到 `Window *`，然后把这个指针继续传给 HE3D 的函数。
 
 ```cpp
 #include "he3d_platform.hpp"
@@ -277,7 +255,7 @@ real `struct Window` in its own source file. Application code only receives a
 namespace HE3D {
 
 struct Window {
-    /* backend-owned window state */
+    /* 后端自己的窗口状态 */
 };
 
 static void *MyAlloc(unsigned long size) { /* ... */ }
@@ -318,7 +296,7 @@ const Platform *GetBuiltinPlatform()
 }
 ```
 
-Application code does not construct `Window` directly:
+应用代码不直接构造 `Window`：
 
 ```cpp
 HE3D::WindowDesc desc = {};
@@ -338,38 +316,27 @@ while (!HE3D::WindowShouldClose(window)) {
 HE3D::DestroyWindow(window);
 ```
 
-Backend callback contracts:
+后端回调契约：
 
-- `alloc` returns storage suitable for any HE3D object. `free` releases storage
-  from `alloc` and should accept `nullptr`.
-- `loadFile` sets `outFile->handle`, `outFile->data`, and `outFile->length` on
-  success. It returns `false` and leaves no owned data on failure.
-- `closeFile` releases data returned by `loadFile`.
-- `createWindow` allocates and returns a backend-owned `Window *`. The caller
-  treats it as an opaque handle.
-- `setWindowTitle` may ignore unsupported title changes, but must tolerate a
-  valid window and title.
-- `destroyWindow` releases all resources owned by the window.
-- `setKeyCallback` stores the callback and user pointer for later input events.
-- `pollEvents` pumps the host event queue and invokes the stored key callback.
-- `shouldClose` returns `true` after user close or backend failure.
-- `timeSeconds` returns monotonic seconds.
-- `present` receives `width * height` row-major `ColorA` pixels. The backend
-  does not own this memory after the call returns.
+- `alloc` 返回可用于任意 HE3D 对象的内存。`free` 释放 `alloc` 返回的内存，并应接受 `nullptr`。
+- `loadFile` 成功时填写 `outFile->handle`、`outFile->data`、`outFile->length`。失败时返回 `false`，且不留下需要释放的数据。
+- `closeFile` 释放 `loadFile` 返回的数据。
+- `createWindow` 分配并返回后端拥有的 `Window *`。调用方把它当作不透明句柄使用。
+- `setWindowTitle` 可以忽略不支持的标题修改，但要能接受有效窗口和标题。
+- `destroyWindow` 释放窗口拥有的全部资源。
+- `setKeyCallback` 保存回调函数和用户指针，供输入事件使用。
+- `pollEvents` 轮询宿主事件队列，并调用已保存的键盘回调。
+- `shouldClose` 在用户关闭窗口或后端失败后返回 `true`。
+- `timeSeconds` 返回单调递增的秒数。
+- `present` 接收 `width * height` 个按行排列的 `ColorA` 像素。调用返回后，后端不拥有这块内存。
 
-Keyboard callbacks use integer key values. Printable keys should use their ASCII
-code, and Escape should use `27`. Backends with separate key-up events should
-forward both press and release. Backends that only receive key press messages can
-synthesize release in `pollEvents`.
+键盘回调使用整数键值。可打印按键应使用 ASCII 码，Escape 使用 `27`。有独立 key-up 事件的后端应同时转发按下和释放；只收到按下消息的后端可以在 `pollEvents` 里合成释放。
 
-`ColorA` pixels are RGBA byte order. If the host API uses a different byte order
-or stride, convert or upload accordingly inside `present`.
+`ColorA` 像素是 RGBA 字节顺序。如果宿主 API 使用不同字节顺序或 stride，在 `present` 内转换或上传。
 
-For a CMake target, compile `src/he3d.cpp`, the custom backend source file, and
-the application source. Link exactly one backend implementation that provides
-`GetBuiltinPlatform()`.
+CMake 目标需要编译 `src/he3d.cpp`、自定义后端源文件和应用源文件。每个目标只能链接一个提供 `GetBuiltinPlatform()` 的后端实现。
 
-The console backend target is wired in CMake as:
+控制台后端在 CMake 里这样接入：
 
 ```cmake
 add_library(he3d_engine_console STATIC
@@ -392,14 +359,11 @@ target_link_libraries(he3d_flight_simulator_console
 )
 ```
 
-The console target uses the same flight simulator sources as the SDL3 and XAPI
-targets. The application still fills a `WindowDesc`, calls `CreateWindow`,
-constructs a `Renderer` with the returned `Window *`, draws, presents, and
-finally calls `DestroyWindow`.
+控制台目标和 SDL3/XAPI 目标使用同一份飞行模拟器源码。应用仍然是填写 `WindowDesc`，调用 `CreateWindow`，用返回的 `Window *` 构造 `Renderer`，绘制并 `Present`，最后调用 `DestroyWindow`。
 
-## Engine API
+## 引擎 API
 
-`DirectionalLight` controls simple directional lighting:
+`DirectionalLight` 控制方向光：
 
 ```cpp
 struct DirectionalLight {
@@ -409,10 +373,9 @@ struct DirectionalLight {
 };
 ```
 
-Default values are direction `{0, -1, 1}`, color `{1, 1, 1}`, and ambient
-`0.15f`.
+默认值是方向 `{0, -1, 1}`，颜色 `{1, 1, 1}`，环境光 `0.15f`。
 
-`Mesh` owns triangle vertex data:
+`Mesh` 拥有三角形顶点数据：
 
 ```cpp
 class Mesh {
@@ -425,7 +388,7 @@ public:
 };
 ```
 
-Mesh functions:
+Mesh 函数：
 
 - `bool Init(int vertexCount)`
 - `bool Init(const float3 *srcVertices, const float2 *srcUvs, int vertexCount)`
@@ -434,11 +397,9 @@ Mesh functions:
 - `static Mesh *Create(const float3 *srcVertices, const float2 *srcUvs, int vertexCount)`
 - `static Mesh *LoadOBJ(const char *filename)`
 
-`vertCount` is the active vertex count. HE3D draws triangles, so mesh data is
-interpreted as groups of three vertices. `capacity` is the allocated vertex
-count and allows callers to refill a mesh in place.
+`vertCount` 是当前有效顶点数。HE3D 绘制三角形，因此顶点按每 3 个一组三角形解释。`capacity` 是已分配顶点数，可用于原地重填 mesh。
 
-`Texture` owns floating-point RGB pixels:
+`Texture` 拥有浮点 RGB 像素：
 
 ```cpp
 class Texture {
@@ -450,15 +411,14 @@ public:
 };
 ```
 
-Texture functions:
+Texture 函数：
 
 - `float3 Sample(float u, float v) const`
 - `static Texture *LoadBMP(const char *filename)`
 
-`Sample` wraps UV coordinates and uses nearest-neighbor sampling. Invalid
-textures sample as magenta `{1, 0, 1}`.
+`Sample` 会环绕 UV，并使用最近邻采样。无效纹理采样结果是洋红色 `{1, 0, 1}`。
 
-`GameObject` binds a mesh to a transform:
+`GameObject` 把 mesh 绑定到变换：
 
 ```cpp
 class GameObject {
@@ -469,13 +429,13 @@ public:
 };
 ```
 
-GameObject functions:
+GameObject 函数：
 
 - `float3 Forward() const`
 
-`Forward()` returns local `{0, 0, 1}` transformed by `orientation`.
+`Forward()` 返回局部 `{0, 0, 1}` 经过 `orientation` 旋转后的方向。
 
-`Camera` stores a view transform and field of view:
+`Camera` 保存视图变换和视场角：
 
 ```cpp
 class Camera {
@@ -488,13 +448,13 @@ public:
 };
 ```
 
-Camera functions:
+Camera 函数：
 
 - `void Update(float deltaTime)`
 
-`Update` moves `fov` toward `targetFov` using `zoomSpeed`.
+`Update` 会让 `fov` 按 `zoomSpeed` 向 `targetFov` 靠近。
 
-`Renderer` draws meshes into a platform window:
+`Renderer` 将 mesh 绘制到平台窗口：
 
 ```cpp
 class Renderer {
@@ -513,67 +473,57 @@ public:
 };
 ```
 
-Call `Clear`, draw all objects, then call `Present` once per frame. `Resize`
-reallocates the color and depth buffers.
+每帧调用 `Clear`，绘制所有对象，然后调用一次 `Present`。`Resize` 会重新分配 color 和 depth buffer。
 
-## Asset Formats
+## 资源格式
 
-`Mesh::LoadOBJ` supports common static OBJ mesh data:
+`Mesh::LoadOBJ` 支持常见静态 OBJ 网格数据：
 
 - `v x y z`
 - `vt u v`
-- polygon faces using vertex and optional texture-coordinate indices
-- fan triangulation for faces with more than three vertices
+- 使用顶点索引和可选纹理坐标索引的 polygon face
+- 超过三个顶点的 face 使用扇形三角化
 
-Normals from OBJ files are not required. HE3D recalculates one normal per output
-triangle.
+OBJ 法线不是必需项。HE3D 会为输出的每个三角形重新计算一条法线。
 
-`Texture::LoadBMP` supports:
+`Texture::LoadBMP` 支持：
 
-- uncompressed BMP
+- 未压缩 BMP
 - 24-bit BGR
 - 32-bit BGRA
-- top-down and bottom-up row order
-- maximum dimension of 8192 pixels per side
+- top-down 和 bottom-up 行顺序
+- 单边最大 8192 像素
 
-## Built-in Backends
+## 内置后端
 
-The XAPI backend creates XJ380 GUI windows and presents `ColorA` buffers through
-`xapi_WriteBufferA`. Keyboard input prefers `MSG_KEYDOWN` and `MSG_KEYUP`; the
-older `MSG_CHAR` / `MSG_SPCHAR` path is kept only as a compatibility fallback.
+XAPI 后端创建 XJ380 GUI 窗口，并通过 `xapi_WriteBufferA` 提交 `ColorA` 缓冲区。键盘输入优先使用 `MSG_KEYDOWN` 和 `MSG_KEYUP`，旧的 `MSG_CHAR` / `MSG_SPCHAR` 路径只作为兼容兜底。
 
-The SDL3 backend creates an SDL window, renderer, and streaming
-`SDL_PIXELFORMAT_RGBA32` texture. SDL key down/up events are passed directly to
-the HE3D key callback.
+SDL3 后端创建 SDL 窗口、renderer 和 `SDL_PIXELFORMAT_RGBA32` streaming texture。SDL 的 key down/up 事件会直接传给 HE3D 键盘回调。
 
-## Flight Simulator Sample
+## 飞行模拟器示例
 
-The sample lives in `examples/FlightSimulator/`.
+示例位于 `examples/FlightSimulator/`。
 
-Controls:
+控制：
 
-- `W` / `S`: pitch
-- `Q` / `E`: yaw
-- `A` / `D`: roll
-- `Esc`: quit
+- `W` / `S`：俯仰
+- `Q` / `E`：偏航
+- `A` / `D`：滚转
+- `Esc`：退出
 
-Assets:
+资源：
 
 - `examples/FlightSimulator/assets/biplane.obj`
 - `examples/FlightSimulator/assets/biplane.bmp`
 
-The build copies these files next to the executable. If `biplane.obj` cannot be
-loaded, the sample uses its built-in fallback aircraft mesh.
+构建时这两个文件会复制到可执行文件同目录。如果 `biplane.obj` 无法加载，示例会使用内置备用飞机网格。
 
-The sample keeps a 3x3 terrain tile set around the aircraft. Terrain meshes are
-updated in place, and at most one missing tile is generated per frame after the
-aircraft enters a new tile coordinate.
+示例在飞机周围维护 3x3 地形 tile。地形 mesh 会原地更新；飞机进入新 tile 坐标后，每帧最多生成一个缺失 tile。
 
-## Ownership Rules
+## 所有权规则
 
-- Objects returned by `Mesh::Create` and `Mesh::LoadOBJ` are released with
-  `delete`.
-- Objects returned by `Texture::LoadBMP` are released with `delete`.
-- File data returned by `LoadFile` is released with `CloseFile`.
-- Windows returned by `CreateWindow` are released with `DestroyWindow`.
-- `GameObject` and `Camera` do not own meshes or textures.
+- `Mesh::Create` 和 `Mesh::LoadOBJ` 返回的对象用 `delete` 释放。
+- `Texture::LoadBMP` 返回的对象用 `delete` 释放。
+- `LoadFile` 返回的数据用 `CloseFile` 释放。
+- `CreateWindow` 返回的窗口用 `DestroyWindow` 释放。
+- `GameObject` 和 `Camera` 不拥有 mesh 或 texture。
