@@ -14,12 +14,7 @@ if(NOT HE3D_BACKEND STREQUAL "XAPI" AND NOT HE3D_BACKEND STREQUAL "SDL3" AND NOT
 endif()
 message(STATUS "HE3D backend: ${HE3D_BACKEND}")
 
-option(HE3D_OPTIMIZE_FAST "Use -Ofast for Release builds" ON)
-if(HE3D_OPTIMIZE_FAST)
-    set(HE3D_RELEASE_OPT_FLAG -Ofast)
-else()
-    set(HE3D_RELEASE_OPT_FLAG -O2)
-endif()
+set(HE3D_RELEASE_OPT_FLAG -Ofast)
 message(STATUS "HE3D Release optimization: ${HE3D_RELEASE_OPT_FLAG}")
 
 set(CMAKE_CXX_STANDARD 11)
