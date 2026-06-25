@@ -237,7 +237,7 @@ static ClipVertex LerpClipVertex(const ClipVertex& a, const ClipVertex& b, float
     return out;
 }
 
-static int ClipTriangleNear(const ClipVertex *input, ClipVertex *output)
+static int ClipTriangleToNearPlane(const ClipVertex *input, ClipVertex *output)
 {
     ClipVertex temp[4];
     int count = 0;
@@ -291,7 +291,7 @@ static float ScreenTriangleArea(const float2 *ps)
          - (ps[1].y - ps[0].y) * (ps[2].x - ps[0].x);
 }
 
-static bool ScreenTriangleOutside(const float2 *ps, int width, int height)
+static bool TriangleOutsideViewport(const float2 *ps, int width, int height)
 {
     if (ps[0].x < 0.0f && ps[1].x < 0.0f && ps[2].x < 0.0f) return true;
     if (ps[0].x >= (float)width && ps[1].x >= (float)width && ps[2].x >= (float)width) return true;
@@ -779,7 +779,7 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, float3 c
             clipIn[j].uv = {0, 0};
         }
 
-        int clippedCount = ClipTriangleNear(clipIn, clipOut);
+        int clippedCount = ClipTriangleToNearPlane(clipIn, clipOut);
         if (clippedCount < 3) continue;
 
         float3 n = triNormals ? (identityObjRot ? triNormals[triIndex] : objRot.Mul(triNormals[triIndex]))
@@ -792,7 +792,7 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, float3 c
             float3 clippedVv[3] = {clipOut[0].view, clipOut[k].view, clipOut[k + 1].view};
             float2 ps[3];
             ProjectViewTriangle(clippedVv, ps, halfW, halfH, scaleX, scaleY);
-            if (ScreenTriangleOutside(ps, m_width, m_height)) continue;
+            if (TriangleOutsideViewport(ps, m_width, m_height)) continue;
             if (ScreenTriangleArea(ps) <= 0.0f) continue;
             RasterizeSolid(clippedVv, ps, color * intens);
         }
@@ -843,7 +843,7 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, const Te
         float3 ab = vv[1] - vv[0], ac = vv[2] - vv[0];
         if (float3::dot(float3::cross(ab, ac), vv[0]) >= 0) continue;
 
-        int clippedCount = ClipTriangleNear(clipIn, clipOut);
+        int clippedCount = ClipTriangleToNearPlane(clipIn, clipOut);
         if (clippedCount < 3) continue;
 
         float3 n = triNormals ? (identityObjRot ? triNormals[triIndex] : objRot.Mul(triNormals[triIndex]))
@@ -857,7 +857,7 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, const Te
             float2 clippedUvs[3] = {clipOut[0].uv, clipOut[k].uv, clipOut[k + 1].uv};
             float2 ps[3];
             ProjectViewTriangle(clippedVv, ps, halfW, halfH, scaleX, scaleY);
-            if (ScreenTriangleOutside(ps, m_width, m_height)) continue;
+            if (TriangleOutsideViewport(ps, m_width, m_height)) continue;
             if (ScreenTriangleArea(ps) <= 0.0f) continue;
             RasterizeTextured(clippedVv, ps, clippedUvs, intens, tex);
         }

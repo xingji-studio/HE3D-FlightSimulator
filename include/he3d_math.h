@@ -10,7 +10,7 @@
  *   falling back to hardware-tuned software implementations otherwise.
  *
  *   - Compiler builtins map directly to x86 FPU/SSE scalar instructions.
- *   - Quake III fast inverse sqrt eliminates 1/sqrt in normalization hot paths.
+ *   - Fast inverse square root avoids a separate sqrt() + divide in hot paths.
  *   - Combined sin+cos (sincos) halves trig work for quaternion construction.
  *   - Newton sqrt seeded via integer bit manipulation converges in 4-5 iterations.
  *   - Minimax polynomial for sin/cos gives better accuracy than truncated Taylor.
@@ -91,26 +91,17 @@ HE3D_ALWAYS_INLINE float sqrtf(float x) {
 }
 
 // ============================================================================
-// [3] Fast inverse sqrt — Quake III style, always available
+// [3] Fast inverse sqrt
 // ============================================================================
 // Used by normalize() hot paths to compute 1/sqrt(x) directly instead of
-// paying for sqrt() + divide.  This keeps the original Quake III one-Newton-step
-// tradeoff: very fast, approximate, and good enough for per-frame direction math.
+// paying for sqrt() + divide. It uses HE3D's own sqrt estimate and one Newton
+// refinement of the reciprocal-sqrt equation.
 
 HE3D_ALWAYS_INLINE float rsqrtf(float x) {
     if (HE3D_UNLIKELY(x <= 0.0f)) return 0.0f;
 
-    const float x2 = x * 0.5f;
-    float y = x;
-    union {
-        float f;
-        unsigned int i;
-    } conv;
-
-    conv.f = y;
-    conv.i = 0x5f3759dfu - (conv.i >> 1);
-    y = conv.f;
-    y = y * (1.5f - (x2 * y * y));
+    float y = 1.0f / sqrtf(x);
+    y = y * (1.5f - 0.5f * x * y * y);
     return y;
 }
 
@@ -253,8 +244,8 @@ struct float3 {
         return (*this) * (1.0f / sqrtf(lsq));
     }
 
-    // Fast normalize: uses Quake III inverse sqrt. Use in hot paths where a
-    // small approximation error is cheaper than sqrt+divide.
+    // Fast normalize: uses HE3D's inverse sqrt path. Use in hot paths where a
+    // small approximation error is cheaper than the standard path.
     HE3D_MEMBER_INLINE float3 normalizeFast() const {
         float lsq = lengthSq();
         if (HE3D_UNLIKELY(lsq < 0.0000001f)) return {0,0,0};
@@ -347,7 +338,7 @@ struct quat {
         return {w*inv, x*inv, y*inv, z*inv};
     }
 
-    // Fast normalize using Quake III inverse sqrt.
+    // Fast normalize using HE3D's inverse sqrt path.
     HE3D_MEMBER_INLINE quat normalizeFast() const {
         float mag = w*w + x*x + y*y + z*z;
         if (HE3D_UNLIKELY(mag < 0.0000001f)) return {1,0,0,0};
