@@ -10,7 +10,7 @@
  *   falling back to hardware-tuned software implementations otherwise.
  *
  *   - Compiler builtins map directly to x86 FPU/SSE scalar instructions.
- *   - Fast inverse square root avoids a separate sqrt() + divide in hot paths.
+ *   - Reciprocal square root stays simple so modern optimizers can lower it well.
  *   - Combined sin+cos (sincos) halves trig work for quaternion construction.
  *   - Newton sqrt seeded via integer bit manipulation converges in 4-5 iterations.
  *   - Minimax polynomial for sin/cos gives better accuracy than truncated Taylor.
@@ -91,18 +91,14 @@ HE3D_ALWAYS_INLINE float sqrtf(float x) {
 }
 
 // ============================================================================
-// [3] Fast inverse sqrt
+// [3] Reciprocal sqrt
 // ============================================================================
-// Used by normalize() hot paths to compute 1/sqrt(x) directly instead of
-// paying for sqrt() + divide. It uses HE3D's own sqrt estimate and one Newton
-// refinement of the reciprocal-sqrt equation.
+// Modern compilers do a good job with this pattern under -Ofast, and it avoids
+// carrying architecture-era-specific approximation tricks in the public math path.
 
 HE3D_ALWAYS_INLINE float rsqrtf(float x) {
     if (HE3D_UNLIKELY(x <= 0.0f)) return 0.0f;
-
-    float y = 1.0f / sqrtf(x);
-    y = y * (1.5f - 0.5f * x * y * y);
-    return y;
+    return 1.0f / sqrtf(x);
 }
 
 // ============================================================================
@@ -244,8 +240,7 @@ struct float3 {
         return (*this) * (1.0f / sqrtf(lsq));
     }
 
-    // Fast normalize: uses HE3D's inverse sqrt path. Use in hot paths where a
-    // small approximation error is cheaper than the standard path.
+    // Fast normalize: keeps the reciprocal-square-root operation in one place.
     HE3D_MEMBER_INLINE float3 normalizeFast() const {
         float lsq = lengthSq();
         if (HE3D_UNLIKELY(lsq < 0.0000001f)) return {0,0,0};
@@ -338,7 +333,7 @@ struct quat {
         return {w*inv, x*inv, y*inv, z*inv};
     }
 
-    // Fast normalize using HE3D's inverse sqrt path.
+    // Fast normalize using HE3D's reciprocal-square-root path.
     HE3D_MEMBER_INLINE quat normalizeFast() const {
         float mag = w*w + x*x + y*y + z*z;
         if (HE3D_UNLIKELY(mag < 0.0000001f)) return {1,0,0,0};
