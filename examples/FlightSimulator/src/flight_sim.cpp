@@ -45,7 +45,7 @@ static float FlightNoise(int x, int z)
     return 1.0f - (float)(mixed & 0x7fffffff) / 1073741824.0f;
 }
 
-static float FlightTerrainHeight(float x, float z)
+float TerrainHeightAt(float x, float z)
 {
     float large = FlightNoise((int)(x * 0.05f), (int)(z * 0.05f)) * 8.0f;
     float small = FlightNoise((int)(x * 0.2f),  (int)(z * 0.2f))  * 1.5f;
@@ -98,7 +98,7 @@ bool UpdatePlaneMesh(Mesh *mesh, int gridCount, float step, float worldX, float 
             for (int x = 0; x < gridCount; x++)
             {
                 float lx = x * step - half;
-                heightCache[z * gridCount + x] = FlightTerrainHeight(lx + worldX, wz);
+                heightCache[z * gridCount + x] = TerrainHeightAt(lx + worldX, wz);
             }
         }
     }
@@ -117,10 +117,10 @@ bool UpdatePlaneMesh(Mesh *mesh, int gridCount, float step, float worldX, float 
             float wx1 = lx1 + worldX;
             float wz1 = lz1 + worldZ;
 
-            float h1 = useHeightCache ? heightCache[z * gridCount + x] : FlightTerrainHeight(wx0, wz0);
-            float h2 = useHeightCache ? heightCache[(z + 1) * gridCount + x] : FlightTerrainHeight(wx0, wz1);
-            float h3 = useHeightCache ? heightCache[z * gridCount + x + 1] : FlightTerrainHeight(wx1, wz0);
-            float h4 = useHeightCache ? heightCache[(z + 1) * gridCount + x + 1] : FlightTerrainHeight(wx1, wz1);
+            float h1 = useHeightCache ? heightCache[z * gridCount + x] : TerrainHeightAt(wx0, wz0);
+            float h2 = useHeightCache ? heightCache[(z + 1) * gridCount + x] : TerrainHeightAt(wx0, wz1);
+            float h3 = useHeightCache ? heightCache[z * gridCount + x + 1] : TerrainHeightAt(wx1, wz0);
+            float h4 = useHeightCache ? heightCache[(z + 1) * gridCount + x + 1] : TerrainHeightAt(wx1, wz1);
 
             float3 v1 = {lx0, h1, lz0};
             float3 v2 = {lx0, h2, lz1};

@@ -175,13 +175,12 @@ int main(int argc, char** argv, char** envp) {
     const float TS = (GC - 1) * GS;
     const int TN   = (RD * 2 + 1) * (RD * 2 + 1);
 
-    struct Tile { HE3D::GameObject obj; HE3D::CollisionBox box; int gx, gz; bool active; };
+    struct Tile { HE3D::GameObject obj; int gx, gz; bool active; };
     struct TileRequest { int gx, gz; };
     Tile* tiles = new Tile[TN];
     for (int i = 0; i < TN; i++) {
         tiles[i].active = false;
         tiles[i].obj.mesh = nullptr;
-        tiles[i].box.BindGameObject(&tiles[i].obj);
     }
 
     int centerX = 0, centerZ = 0;
@@ -248,15 +247,16 @@ int main(int argc, char** argv, char** envp) {
         HE3D::quat dR = HE3D::quat::FromEuler({0, 0, cR * 1.75f * dt});
         plane.orientation = (dY * plane.orientation * dP * dR).normalizeFast();
         HE3D::float3 fwd = plane.Forward();
-        HE3D::CollisionBox obstacles[TN];
-        int obstacleCount = 0;
-        for (int i = 0; i < TN; i++) {
-            if (tiles[i].active && tiles[i].box.IsValid() && obstacleCount < TN) {
-                obstacles[obstacleCount++] = tiles[i].box;
+        planeBody.SetVelocity(fwd * 15.0f);
+        planeBody.Step(dt);
+        float terrainY = TerrainHeightAt(plane.position.x, plane.position.z);
+        float planeBottomY = planeBox.Center().y - planeBox.halfExtents.y;
+        if (planeBottomY < terrainY + 0.05f) {
+            plane.position.y += (terrainY + 0.05f) - planeBottomY;
+            if (planeBody.velocity.y < 0.0f) {
+                planeBody.velocity.y = 0.0f;
             }
         }
-        planeBody.SetVelocity(fwd * 15.0f);
-        planeBody.StepWithCollisions(dt, planeBox, obstacles, obstacleCount, 8);
 
         // Camera
         // Follow the aircraft from behind while smoothing the yaw so quick
@@ -342,10 +342,6 @@ int main(int argc, char** argv, char** envp) {
                         }
                         tiles[i].obj.position = {wx, 0, wz};
                         tiles[i].active = (tiles[i].obj.mesh != nullptr);
-                        if (tiles[i].active) {
-                            tiles[i].box.BindGameObject(&tiles[i].obj);
-                            tiles[i].box.FitMesh();
-                        }
                         break;
                     }
                 }
