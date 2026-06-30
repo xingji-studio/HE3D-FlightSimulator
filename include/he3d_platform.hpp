@@ -2,16 +2,20 @@
 
 namespace HE3D {
 
+typedef __UINT8_TYPE__ uint8_t;
+
 struct ColorA {
-    unsigned char r;
-    unsigned char g;
-    unsigned char b;
-    unsigned char a;
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    uint8_t a;
 };
+
+typedef char he3d_colora_must_be_4_bytes[(sizeof(ColorA) == 4) ? 1 : -1];
 
 struct FileData {
     void *handle;
-    const unsigned char *data;
+    const uint8_t *data;
     unsigned long long length;
 };
 

@@ -21,7 +21,7 @@ namespace HE3D {
 // ============================================================================
 struct DirectionalLight {
     float3 direction = {0, -1, 1};
-    float3 color     = {1, 1, 1};
+    color3 color     = {1, 1, 1};
     float  ambient   = 0.15f;
 };
 
@@ -69,7 +69,7 @@ public:
     Texture(const Texture&) = delete;
     Texture& operator=(const Texture&) = delete;
 
-    float3 Sample(float u, float v) const;
+    color3 Sample(float u, float v) const;
     static Texture *LoadBMP(const char *filename);
 };
 
@@ -116,8 +116,8 @@ public:
     Renderer(Window *window, int w, int h);
     ~Renderer();
 
-    void Clear(float3 color);
-    void DrawGameObject(const GameObject& obj, const Camera& cam, float3 color);
+    void Clear(color3 color);
+    void DrawGameObject(const GameObject& obj, const Camera& cam, color3 color);
     void DrawGameObject(const GameObject& obj, const Camera& cam, const Texture& tex);
     void Present();
     void Resize(int w, int h);
@@ -133,7 +133,7 @@ private:
     float  *m_depthBuf; // m_width * m_height
 
     bool ApplyFxaa();
-    void RasterizeSolid(const float3 *v_view, const float2 *p_screen, float3 color);
+    void RasterizeSolid(const float3 *v_view, const float2 *p_screen, color3 color);
     void RasterizeTextured(const float3 *v_view, const float2 *p_screen,
                            const float2 *uvs, float intensity, const Texture& tex);
 

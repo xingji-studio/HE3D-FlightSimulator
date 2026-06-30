@@ -320,8 +320,8 @@ int main(int argc, char** argv, char** envp) {
         // Render
         // Draw terrain first, then the plane, and finally present the platform
         // framebuffer through XAPI or SDL3.
-        eng.Clear({0.45f, 0.75f, 1.0f});
-        HE3D::float3 tc = {0.3f, 0.7f, 0.3f};
+        eng.Clear(HE3D::color3(0.45f, 0.75f, 1.0f));
+        HE3D::color3 tc = {0.3f, 0.7f, 0.3f};
         float drawRadiusSq = (TS * 1.45f) * (TS * 1.45f);
         for (int i = 0; i < TN; i++)
             if (tiles[i].active && tiles[i].obj.mesh) {
@@ -330,7 +330,7 @@ int main(int argc, char** argv, char** envp) {
                 eng.DrawGameObject(tiles[i].obj, cam, tc);
             }
         if (hasTex) eng.DrawGameObject(plane, cam, *pTex);
-        else       eng.DrawGameObject(plane, cam, {0.8f, 0.2f, 0.2f});
+        else       eng.DrawGameObject(plane, cam, HE3D::color3(0.8f, 0.2f, 0.2f));
         eng.Present();
 
         fpsFrames++;

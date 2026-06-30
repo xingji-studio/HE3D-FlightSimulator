@@ -553,7 +553,7 @@ Mesh *Mesh::LoadOBJ(const char *filename)
 // ============================================================================
 // [5] Texture::Sample — Nearest-neighbor with wrap
 // ============================================================================
-float3 Texture::Sample(float u, float v) const {
+color3 Texture::Sample(float u, float v) const {
     if (!valid || !pixels) return {1.0f, 0.0f, 1.0f};
     u = fracf(u);
     v = fracf(v);
@@ -578,7 +578,7 @@ Texture *Texture::LoadBMP(const char *filename)
         return nullptr;
     }
 
-    const unsigned char *d = file.data;
+    const uint8_t *d = file.data;
     unsigned int   flen = (unsigned int)file.length;
     int            bw = 0, bh = 0, bpp = 0, compr = 0;
     unsigned int   off = 0;
@@ -655,10 +655,10 @@ Texture *Texture::LoadBMP(const char *filename)
 
     {
         bool topDown = (bh < 0);
-        const unsigned char *src = d + off;
+        const uint8_t *src = d + off;
         for (int y = 0; y < tex->height; y++) {
             int sY = topDown ? y : (tex->height - 1 - y);
-            const unsigned char *row = src + sY * rowSize;
+            const uint8_t *row = src + sY * rowSize;
             ColorA *dst = pbuf + y * tex->width;
             for (int x = 0; x < tex->width; x++) {
                 dst[x] = {row[2], row[1], row[0], 255};
@@ -704,11 +704,11 @@ void Renderer::Resize(int w, int h) {
     m_depthBuf = new float[sz];
 }
 
-void Renderer::Clear(float3 color) {
+void Renderer::Clear(color3 color) {
     ColorA c;
-    c.r = (unsigned char)HE3D_CLAMP((int)(color.r * 255.0f), 0, 255);
-    c.g = (unsigned char)HE3D_CLAMP((int)(color.g * 255.0f), 0, 255);
-    c.b = (unsigned char)HE3D_CLAMP((int)(color.b * 255.0f), 0, 255);
+    c.r = (uint8_t)HE3D_CLAMP((int)(color.r * 255.0f), 0, 255);
+    c.g = (uint8_t)HE3D_CLAMP((int)(color.g * 255.0f), 0, 255);
+    c.b = (uint8_t)HE3D_CLAMP((int)(color.b * 255.0f), 0, 255);
     c.a = 255;
 
     int total = m_width * m_height;
@@ -743,7 +743,7 @@ void Renderer::Clear(float3 color) {
 // ============================================================================
 // [8] DrawGameObject (solid)
 // ============================================================================
-void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, float3 color) {
+void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, color3 color) {
     if (m_width <= 0 || m_height <= 0) return;
     if (!obj.mesh || obj.mesh->vertCount < 3) return;
     if (!obj.mesh->vertices || !obj.mesh->uvs) return;
@@ -806,7 +806,7 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, const Te
     if (m_width <= 0 || m_height <= 0) return;
     if (!obj.mesh || obj.mesh->vertCount < 3) return;
     if (!obj.mesh->vertices || !obj.mesh->uvs) return;
-    if (!tex.valid) { DrawGameObject(obj, cam, {0.8f, 0.8f, 0.8f}); return; }
+    if (!tex.valid) { DrawGameObject(obj, cam, color3(0.8f, 0.8f, 0.8f)); return; }
 
     float fovRad    = cam.fov * 0.01745329252f;
     float fovScale  = 1.0f / tanf(fovRad * 0.5f);
@@ -867,7 +867,7 @@ void Renderer::DrawGameObject(const GameObject& obj, const Camera& cam, const Te
 // ============================================================================
 // [10] RasterizeSolid
 // ============================================================================
-void Renderer::RasterizeSolid(const float3* vv, const float2* ps, float3 color) {
+void Renderer::RasterizeSolid(const float3* vv, const float2* ps, color3 color) {
     float minXf = HE3D_MIN(HE3D_MIN(ps[0].x, ps[1].x), ps[2].x);
     float maxXf = HE3D_MAX(HE3D_MAX(ps[0].x, ps[1].x), ps[2].x);
     float minYf = HE3D_MIN(HE3D_MIN(ps[0].y, ps[1].y), ps[2].y);
@@ -895,9 +895,9 @@ void Renderer::RasterizeSolid(const float3* vv, const float2* ps, float3 color) 
 
     // Pre-clamp color once, set fields by name for clarity
     ColorA xc;
-    xc.r = (unsigned char)HE3D_CLAMP((int)(color.r * 255.0f), 0, 255);
-    xc.g = (unsigned char)HE3D_CLAMP((int)(color.g * 255.0f), 0, 255);
-    xc.b = (unsigned char)HE3D_CLAMP((int)(color.b * 255.0f), 0, 255);
+    xc.r = (uint8_t)HE3D_CLAMP((int)(color.r * 255.0f), 0, 255);
+    xc.g = (uint8_t)HE3D_CLAMP((int)(color.g * 255.0f), 0, 255);
+    xc.b = (uint8_t)HE3D_CLAMP((int)(color.b * 255.0f), 0, 255);
     xc.a = 255;
 
     int stride = m_width;
@@ -966,7 +966,7 @@ void Renderer::RasterizeTextured(const float3* vv, const float2* ps,
     float duzDx = dw0 * uz0.x + dw1 * uz1.x + dw2 * uz2.x;
     float dvzDx = dw0 * uz0.y + dw1 * uz1.y + dw2 * uz2.y;
 
-    float3 lc = mainLight.color * intens;
+    color3 lc = mainLight.color * intens;
     int lr = HE3D_CLAMP((int)(lc.r * 256.0f), 0, 512);
     int lg = HE3D_CLAMP((int)(lc.g * 256.0f), 0, 512);
     int lb = HE3D_CLAMP((int)(lc.b * 256.0f), 0, 512);
@@ -1008,9 +1008,9 @@ void Renderer::RasterizeTextured(const float3* vv, const float2* ps,
                         tx = HE3D_CLAMP(tx, 0, twm1);
                         ty = HE3D_CLAMP(ty, 0, thm1);
                         ColorA texel = tp[ty * tw + tx];
-                        cbuf[idx].r = (unsigned char)HE3D_CLAMP(((int)texel.r * lr) >> 8, 0, 255);
-                        cbuf[idx].g = (unsigned char)HE3D_CLAMP(((int)texel.g * lg) >> 8, 0, 255);
-                        cbuf[idx].b = (unsigned char)HE3D_CLAMP(((int)texel.b * lb) >> 8, 0, 255);
+                        cbuf[idx].r = (uint8_t)HE3D_CLAMP(((int)texel.r * lr) >> 8, 0, 255);
+                        cbuf[idx].g = (uint8_t)HE3D_CLAMP(((int)texel.g * lg) >> 8, 0, 255);
+                        cbuf[idx].b = (uint8_t)HE3D_CLAMP(((int)texel.b * lb) >> 8, 0, 255);
                         cbuf[idx].a = 255;
                     }
                 }
@@ -1033,9 +1033,9 @@ static int he3d_luma(const ColorA& c)
     return ((int)c.r * 77 + (int)c.g * 150 + (int)c.b * 29) >> 8;
 }
 
-static unsigned char he3d_blend_u8(unsigned char a, unsigned char b)
+static uint8_t he3d_blend_u8(uint8_t a, uint8_t b)
 {
-    return (unsigned char)(((int)a * 141 + (int)b * 115) >> 8);
+    return (uint8_t)(((int)a * 141 + (int)b * 115) >> 8);
 }
 
 bool Renderer::ApplyFxaa()
@@ -1097,9 +1097,9 @@ bool Renderer::ApplyFxaa()
             const ColorA& b = horizontal >= vertical ? m_colorBuf[idx + 1] : m_colorBuf[idx + m_width];
 
             ColorA out;
-            out.r = he3d_blend_u8(center.r, (unsigned char)(((int)a.r + (int)b.r) >> 1));
-            out.g = he3d_blend_u8(center.g, (unsigned char)(((int)a.g + (int)b.g) >> 1));
-            out.b = he3d_blend_u8(center.b, (unsigned char)(((int)a.b + (int)b.b) >> 1));
+            out.r = he3d_blend_u8(center.r, (uint8_t)(((int)a.r + (int)b.r) >> 1));
+            out.g = he3d_blend_u8(center.g, (uint8_t)(((int)a.g + (int)b.g) >> 1));
+            out.b = he3d_blend_u8(center.b, (uint8_t)(((int)a.b + (int)b.b) >> 1));
             out.a = center.a;
             m_fxaaBuf[idx] = out;
         }

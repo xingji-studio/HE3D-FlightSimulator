@@ -44,7 +44,7 @@ cmake --build build
 - `ceilf(float x) -> float`
 - `roundf(float x) -> float`
 - `fracf(float x) -> float`
-- `sqrtf(float x) -> float`
+- `sqrtf(float x) -> float`：通过快速平方根倒数计算。
 - `rsqrtf(float x) -> float`：快速平方根倒数。
 - `sinf(float x) -> float`
 - `cosf(float x) -> float`
@@ -78,14 +78,11 @@ struct float2 {
 - 标量 `*` 和 `/`
 - 分量相乘 `*`
 
-`float3` 保存三维向量或 RGB 颜色：
+`float3` 保存三维向量：
 
 ```cpp
 struct float3 {
-    union {
-        struct { float x, y, z; };
-        struct { float r, g, b; };
-    };
+    float x, y, z;
 };
 ```
 
@@ -104,6 +101,21 @@ struct float3 {
 - `float3::lerp(a, b, t)`
 - `rotateX(angle)`、`rotateY(angle)`、`rotateZ(angle)`
 - `rotateX(s, c)`、`rotateY(s, c)`、`rotateZ(s, c)`
+
+`color3` 保存线性 RGB 颜色：
+
+```cpp
+struct color3 {
+    float r, g, b;
+};
+```
+
+支持的操作：
+
+- 构造：`color3(float r = 0, float g = 0, float b = 0)`
+- `+`、`-`
+- 标量 `*` 和 `/`
+- 分量相乘 `*`
 
 `quat` 表示旋转：
 
@@ -126,6 +138,37 @@ struct quat {
 
 欧拉角单位是弧度。`FromEuler` 使用 X 作为 pitch，Y 作为 yaw，Z 作为 roll。
 
+## 射线 API
+
+`Ray` 用于 3D 查询。方向向量建议传入单位向量，或者使用 `Ray::FromTo()` / `Normalized()` 创建。
+
+```cpp
+HE3D::Ray ray({0, 1, -5}, {0, 0, 1});
+float distance = 0.0f;
+if (ray.IntersectSphere({0, 1, 0}, 1.0f, &distance)) {
+    HE3D::float3 hitPoint = ray.At(distance);
+}
+```
+
+类型：
+
+- `Ray`：`origin`、`direction`
+- `RayHit`：`hit`、`distance`、`position`、`normal`、`u`、`v`
+- `AABB`：`min`、`max`
+
+函数：
+
+- `Ray::FromTo(from, to) -> Ray`
+- `Normalized() -> Ray`
+- `At(distance) -> float3`
+- `IntersectSphere(center, radius, outDistance) -> bool`
+- `IntersectPlane(point, normal, outDistance) -> bool`
+- `IntersectTriangle(v0, v1, v2, outDistance, outU, outV) -> bool`
+- `IntersectAABB(box, outNear, outFar) -> bool`
+- `CastSphere(center, radius) -> RayHit`
+- `CastPlane(point, normal) -> RayHit`
+- `CastTriangle(v0, v1, v2) -> RayHit`
+
 `float4x4` 是初始化为单位矩阵的 4x4 矩阵：
 
 ```cpp
@@ -138,14 +181,20 @@ struct float4x4 {
 
 平台层向引擎提供内存、文件、窗口、输入、时间和 framebuffer 提交。
 
+字节类型：
+
+```cpp
+typedef /* 8-bit unsigned integer */ uint8_t;
+```
+
 像素布局：
 
 ```cpp
 struct ColorA {
-    unsigned char r;
-    unsigned char g;
-    unsigned char b;
-    unsigned char a;
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    uint8_t a;
 };
 ```
 
@@ -154,7 +203,7 @@ struct ColorA {
 ```cpp
 struct FileData {
     void *handle;
-    const unsigned char *data;
+    const uint8_t *data;
     unsigned long long length;
 };
 ```
@@ -309,7 +358,7 @@ HE3D::Renderer renderer(window, desc.width, desc.height);
 
 while (!HE3D::WindowShouldClose(window)) {
     HE3D::PollEvents(window);
-    renderer.Clear({0.1f, 0.1f, 0.12f});
+    renderer.Clear(HE3D::color3(0.1f, 0.1f, 0.12f));
     renderer.Present();
 }
 
@@ -368,7 +417,7 @@ target_link_libraries(he3d_flight_simulator_console
 ```cpp
 struct DirectionalLight {
     float3 direction;
-    float3 color;
+    color3 color;
     float ambient;
 };
 ```
@@ -399,21 +448,21 @@ Mesh 函数：
 
 `vertCount` 是当前有效顶点数。HE3D 绘制三角形，因此顶点按每 3 个一组三角形解释。`capacity` 是已分配顶点数，可用于原地重填 mesh。
 
-`Texture` 拥有浮点 RGB 像素：
+`Texture` 拥有 RGBA 字节像素：
 
 ```cpp
 class Texture {
 public:
     int width;
     int height;
-    float3 *pixels;
+    ColorA *pixels;
     bool valid;
 };
 ```
 
 Texture 函数：
 
-- `float3 Sample(float u, float v) const`
+- `color3 Sample(float u, float v) const`
 - `static Texture *LoadBMP(const char *filename)`
 
 `Sample` 会环绕 UV，并使用最近邻采样。无效纹理采样结果是洋红色 `{1, 0, 1}`。
@@ -464,8 +513,8 @@ public:
     Renderer(Window *window, int w, int h);
     ~Renderer();
 
-    void Clear(float3 color);
-    void DrawGameObject(const GameObject& obj, const Camera& cam, float3 color);
+    void Clear(color3 color);
+    void DrawGameObject(const GameObject& obj, const Camera& cam, color3 color);
     void DrawGameObject(const GameObject& obj, const Camera& cam, const Texture& tex);
     void Present();
     void Resize(int w, int h);

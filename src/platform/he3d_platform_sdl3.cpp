@@ -63,7 +63,7 @@ static bool SdlLoadFile(const char *path, FileData *outFile)
         return false;
     }
 
-    unsigned char *data = (unsigned char *)std::malloc((unsigned long)size);
+    uint8_t *data = (uint8_t *)std::malloc((unsigned long)size);
     if (!data)
     {
         std::fclose(file);

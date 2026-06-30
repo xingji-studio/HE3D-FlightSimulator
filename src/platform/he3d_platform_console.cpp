@@ -55,7 +55,7 @@ static bool ConsoleLoadFile(const char *path, FileData *outFile)
     }
 
     unsigned long long size = (unsigned long long)endPos;
-    unsigned char *data = (unsigned char *)std::malloc((unsigned long)size);
+    uint8_t *data = (uint8_t *)std::malloc((unsigned long)size);
     if (!data)
     {
         return false;

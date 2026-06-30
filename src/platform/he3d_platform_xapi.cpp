@@ -113,7 +113,7 @@ static bool XapiLoadFile(const char *path, FileData *outFile)
     }
 
     outFile->handle = file;
-    outFile->data = (const unsigned char *)file->buffer;
+    outFile->data = (const uint8_t *)file->buffer;
     outFile->length = file->length;
     return true;
 }

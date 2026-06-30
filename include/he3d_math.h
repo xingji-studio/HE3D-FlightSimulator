@@ -4,20 +4,15 @@
  *
  * No standard library dependencies. No platform API dependencies.
  *
- * Optimization strategy (informed by XJ380 API Spec v1.3):
- *   xxcc is Clang 18.1.8+ based; -fno-builtin is only required for "other
- *   compilers" (§1-2). We therefore use __builtin_* when __clang__ is defined,
- *   falling back to hardware-tuned software implementations otherwise.
- *
- *   - Compiler builtins map directly to x86 FPU/SSE scalar instructions.
- *   - Reciprocal square root stays simple so modern optimizers can lower it well.
+ * Optimization strategy:
+ *   - Keep math self-contained for freestanding XAPI builds.
+ *   - Use two Newton steps for reciprocal square root.
  *   - Combined sin+cos (sincos) halves trig work for quaternion construction.
- *   - Newton sqrt seeded via integer bit manipulation converges in 4-5 iterations.
  *   - Minimax polynomial for sin/cos gives better accuracy than truncated Taylor.
  *   - Everything is static+always_inline so the compiler can constant-fold and
- *     auto-vectorize.
+ *     optimize hot paths.
  *
- * Performance-first: prefer compiler builtins, all functions always_inline.
+ * Performance-first: no libm dependency, all functions always_inline.
  */
 
 // ============================================================================
@@ -69,12 +64,12 @@ HE3D_ALWAYS_INLINE float fracf(float x) {
 }
 
 // ============================================================================
-// [2] sqrt — hardware builtin or Newton with bit-manipulation seed
+// [2] sqrt — public sqrt via reciprocal sqrt, plus an internal precise helper
 // ============================================================================
 
-// Software sqrt: bit-manipulation for initial guess, then 5 Newton iterations.
-// Converges to full float precision on x86 (vs 12 iterations for naive x0=x).
-HE3D_ALWAYS_INLINE float sqrtf(float x) {
+// Precise software sqrt: bit-manipulation for initial guess, then 5 Newton
+// iterations. Kept as an internal helper for places that need the tighter path.
+HE3D_ALWAYS_INLINE float sqrtf_precise(float x) {
     if (HE3D_UNLIKELY(x <= 0.0f)) return 0.0f;
     // Initial guess: halve exponent, keep mantissa
     union { float f; int i; } u;
@@ -93,16 +88,28 @@ HE3D_ALWAYS_INLINE float sqrtf(float x) {
 // ============================================================================
 // [3] Reciprocal sqrt
 // ============================================================================
-// Modern compilers do a good job with this pattern under -Ofast, and it avoids
-// carrying architecture-era-specific approximation tricks in the public math path.
+// Bit-level seed plus two Newton iterations: fast enough for normalizeFast(),
+// and much more accurate than a one-iteration approximation.
 
 HE3D_ALWAYS_INLINE float rsqrtf(float x) {
     if (HE3D_UNLIKELY(x <= 0.0f)) return 0.0f;
-    return 1.0f / sqrtf(x);
+    float x2 = x * 0.5f;
+    union { float f; unsigned int i; } u;
+    u.f = x;
+    u.i = 0x5f3759dfu - (u.i >> 1);
+    float y = u.f;
+    y = y * (1.5f - (x2 * y * y));
+    y = y * (1.5f - (x2 * y * y));
+    return y;
+}
+
+HE3D_ALWAYS_INLINE float sqrtf(float x) {
+    if (HE3D_UNLIKELY(x <= 0.0f)) return 0.0f;
+    return 1.0f / rsqrtf(x);
 }
 
 // ============================================================================
-// [4] sin / cos / tan — builtin or minimax-polynomial software
+// [4] sin / cos / tan — minimax-polynomial software
 // ============================================================================
 
 // Software sin/cos using minimax polynomial (degree 7) on [-PI, PI].
@@ -211,13 +218,10 @@ struct float2 {
 };
 
 // ============================================================================
-// [9] float3 — 3D vector (vertices, colors, normals) — OPTIMIZED
+// [9] float3 — 3D vector (vertices, normals, positions) — OPTIMIZED
 // ============================================================================
 struct float3 {
-    union {
-        struct { float x, y, z; };
-        struct { float r, g, b; };
-    };
+    float x, y, z;
 
     HE3D_MEMBER_INLINE float3(float _x = 0, float _y = 0, float _z = 0) : x(_x), y(_y), z(_z) {}
 
@@ -287,7 +291,186 @@ struct float3 {
 };
 
 // ============================================================================
-// [10] quat — Quaternion for 3D rotation — OPTIMIZED
+// [10] color3 — linear RGB color
+// ============================================================================
+struct color3 {
+    float r, g, b;
+
+    HE3D_MEMBER_INLINE color3(float _r = 0, float _g = 0, float _b = 0)
+        : r(_r), g(_g), b(_b) {}
+
+    HE3D_MEMBER_INLINE color3 operator+(const color3& c) const { return {r + c.r, g + c.g, b + c.b}; }
+    HE3D_MEMBER_INLINE color3 operator-(const color3& c) const { return {r - c.r, g - c.g, b - c.b}; }
+    HE3D_MEMBER_INLINE color3 operator*(float s) const { return {r * s, g * s, b * s}; }
+    HE3D_MEMBER_INLINE color3 operator*(const color3& c) const { return {r * c.r, g * c.g, b * c.b}; }
+    HE3D_MEMBER_INLINE color3 operator/(float s) const {
+        float inv = 1.0f / s;
+        return {r * inv, g * inv, b * inv};
+    }
+};
+
+// ============================================================================
+// [11] Ray — 3D query helper
+// ============================================================================
+struct RayHit {
+    bool   hit;
+    float  distance;
+    float3 position;
+    float3 normal;
+    float  u;
+    float  v;
+
+    HE3D_MEMBER_INLINE RayHit()
+        : hit(false), distance(0.0f), position{0,0,0}, normal{0,0,0}, u(0.0f), v(0.0f) {}
+};
+
+struct AABB {
+    float3 min;
+    float3 max;
+
+    HE3D_MEMBER_INLINE AABB(float3 _min = {0,0,0}, float3 _max = {0,0,0})
+        : min(_min), max(_max) {}
+};
+
+struct Ray {
+    float3 origin;
+    float3 direction;
+
+    HE3D_MEMBER_INLINE Ray(float3 _origin = {0,0,0}, float3 _direction = {0,0,1})
+        : origin(_origin), direction(_direction) {}
+
+    HE3D_MEMBER_INLINE static Ray FromTo(float3 from, float3 to) {
+        return Ray(from, (to - from).normalizeFast());
+    }
+
+    HE3D_MEMBER_INLINE Ray Normalized() const {
+        return Ray(origin, direction.normalizeFast());
+    }
+
+    HE3D_MEMBER_INLINE float3 At(float distance) const {
+        return origin + direction * distance;
+    }
+
+    HE3D_MEMBER_INLINE bool IntersectSphere(float3 center, float radius, float *outDistance = nullptr) const {
+        float3 oc = origin - center;
+        float a = float3::dot(direction, direction);
+        if (HE3D_UNLIKELY(a < 0.0000001f)) return false;
+        float b = 2.0f * float3::dot(oc, direction);
+        float c = float3::dot(oc, oc) - radius * radius;
+        float discriminant = b * b - 4.0f * a * c;
+        if (discriminant < 0.0f) return false;
+
+        float root = sqrtf(discriminant);
+        float invDenom = 0.5f / a;
+        float t = (-b - root) * invDenom;
+        if (t < 0.0f) t = (-b + root) * invDenom;
+        if (t < 0.0f) return false;
+
+        if (outDistance) *outDistance = t;
+        return true;
+    }
+
+    HE3D_MEMBER_INLINE bool IntersectPlane(float3 point, float3 normal, float *outDistance = nullptr) const {
+        float denom = float3::dot(normal, direction);
+        if (fabsf(denom) < 0.000001f) return false;
+
+        float t = float3::dot(point - origin, normal) / denom;
+        if (t < 0.0f) return false;
+
+        if (outDistance) *outDistance = t;
+        return true;
+    }
+
+    HE3D_MEMBER_INLINE bool IntersectTriangle(float3 v0, float3 v1, float3 v2,
+                                             float *outDistance = nullptr,
+                                             float *outU = nullptr,
+                                             float *outV = nullptr) const {
+        float3 edge1 = v1 - v0;
+        float3 edge2 = v2 - v0;
+        float3 pvec = float3::cross(direction, edge2);
+        float det = float3::dot(edge1, pvec);
+        if (fabsf(det) < 0.000001f) return false;
+
+        float invDet = 1.0f / det;
+        float3 tvec = origin - v0;
+        float u = float3::dot(tvec, pvec) * invDet;
+        if (u < 0.0f || u > 1.0f) return false;
+
+        float3 qvec = float3::cross(tvec, edge1);
+        float v = float3::dot(direction, qvec) * invDet;
+        if (v < 0.0f || u + v > 1.0f) return false;
+
+        float t = float3::dot(edge2, qvec) * invDet;
+        if (t < 0.0f) return false;
+
+        if (outDistance) *outDistance = t;
+        if (outU) *outU = u;
+        if (outV) *outV = v;
+        return true;
+    }
+
+    HE3D_MEMBER_INLINE bool IntersectAABB(const AABB& box,
+                                          float *outNear = nullptr,
+                                          float *outFar = nullptr) const {
+        float tmin = 0.0f;
+        float tmax = 340282346638528859811704183484516925440.0f;
+
+#define HE3D_RAY_AABB_AXIS(originAxis, directionAxis, minAxis, maxAxis) \
+        do { \
+            if (fabsf(directionAxis) < 0.000001f) { \
+                if ((originAxis) < (minAxis) || (originAxis) > (maxAxis)) return false; \
+            } else { \
+                float invD = 1.0f / (directionAxis); \
+                float t0 = ((minAxis) - (originAxis)) * invD; \
+                float t1 = ((maxAxis) - (originAxis)) * invD; \
+                if (t0 > t1) { float tmp = t0; t0 = t1; t1 = tmp; } \
+                if (t0 > tmin) tmin = t0; \
+                if (t1 < tmax) tmax = t1; \
+                if (tmax < tmin) return false; \
+            } \
+        } while (0)
+
+        HE3D_RAY_AABB_AXIS(origin.x, direction.x, box.min.x, box.max.x);
+        HE3D_RAY_AABB_AXIS(origin.y, direction.y, box.min.y, box.max.y);
+        HE3D_RAY_AABB_AXIS(origin.z, direction.z, box.min.z, box.max.z);
+
+#undef HE3D_RAY_AABB_AXIS
+
+        if (outNear) *outNear = tmin;
+        if (outFar) *outFar = tmax;
+        return true;
+    }
+
+    HE3D_MEMBER_INLINE RayHit CastSphere(float3 center, float radius) const {
+        RayHit result;
+        if (!IntersectSphere(center, radius, &result.distance)) return result;
+        result.hit = true;
+        result.position = At(result.distance);
+        result.normal = (result.position - center).normalizeFast();
+        return result;
+    }
+
+    HE3D_MEMBER_INLINE RayHit CastPlane(float3 point, float3 normal) const {
+        RayHit result;
+        if (!IntersectPlane(point, normal, &result.distance)) return result;
+        result.hit = true;
+        result.position = At(result.distance);
+        result.normal = normal.normalizeFast();
+        return result;
+    }
+
+    HE3D_MEMBER_INLINE RayHit CastTriangle(float3 v0, float3 v1, float3 v2) const {
+        RayHit result;
+        if (!IntersectTriangle(v0, v1, v2, &result.distance, &result.u, &result.v)) return result;
+        result.hit = true;
+        result.position = At(result.distance);
+        result.normal = float3::cross(v1 - v0, v2 - v0).normalizeFast();
+        return result;
+    }
+};
+
+// ============================================================================
+// [12] quat — Quaternion for 3D rotation — OPTIMIZED
 // ============================================================================
 struct quat {
     float w, x, y, z;
@@ -371,7 +554,7 @@ struct quat {
 };
 
 // ============================================================================
-// [11] float4x4 — 4x4 matrix (reserved for future use)
+// [13] float4x4 — 4x4 matrix (reserved for future use)
 // ============================================================================
 struct float4x4 {
     float m[16];
