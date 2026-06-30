@@ -516,7 +516,87 @@ RayHit CollisionBox::Raycast(const Ray& ray) const
 }
 
 // ============================================================================
-// [4] Mesh allocation helpers
+// [4] PhysicsBody
+// ============================================================================
+PhysicsBody::PhysicsBody()
+    : object(nullptr), velocity{0,0,0}, acceleration{0,0,0},
+      linearDamping(0.0f), m_enabled(false)
+{
+}
+
+PhysicsBody::PhysicsBody(GameObject *gameObject)
+    : object(gameObject), velocity{0,0,0}, acceleration{0,0,0},
+      linearDamping(0.0f), m_enabled(false)
+{
+}
+
+void PhysicsBody::BindGameObject(GameObject *gameObject)
+{
+    object = gameObject;
+}
+
+void PhysicsBody::SetEnabled(bool enabled)
+{
+    m_enabled = enabled;
+}
+
+bool PhysicsBody::IsEnabled() const
+{
+    return m_enabled;
+}
+
+void PhysicsBody::SetVelocity(float3 value)
+{
+    velocity = value;
+}
+
+void PhysicsBody::AddVelocity(float3 delta)
+{
+    velocity = velocity + delta;
+}
+
+void PhysicsBody::AddAcceleration(float3 delta)
+{
+    acceleration = acceleration + delta;
+}
+
+void PhysicsBody::AddImpulse(float3 impulse)
+{
+    velocity = velocity + impulse;
+}
+
+void PhysicsBody::AddDisplacement(float3 delta)
+{
+    if (object)
+    {
+        object->position = object->position + delta;
+    }
+}
+
+void PhysicsBody::ClearForces()
+{
+    acceleration = {0,0,0};
+}
+
+void PhysicsBody::Step(float deltaTime)
+{
+    if (!m_enabled || !object || deltaTime <= 0.0f)
+    {
+        return;
+    }
+
+    velocity = velocity + acceleration * deltaTime;
+    if (linearDamping > 0.0f)
+    {
+        float damp = 1.0f - linearDamping * deltaTime;
+        if (damp < 0.0f) damp = 0.0f;
+        velocity = velocity * damp;
+    }
+    object->position = object->position + velocity * deltaTime;
+}
+
+// ============================================================================
+// [5] Mesh allocation helpers
 // ============================================================================
 bool Mesh::Init(int vertexCount)
 {

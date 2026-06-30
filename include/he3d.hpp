@@ -119,6 +119,35 @@ private:
 };
 
 // ============================================================================
+// PhysicsBody - lightweight motion integrator bound to a GameObject
+// ============================================================================
+class PhysicsBody {
+public:
+    GameObject *object;
+    float3      velocity;
+    float3      acceleration;
+    float       linearDamping;
+
+    PhysicsBody();
+    explicit PhysicsBody(GameObject *gameObject);
+
+    void BindGameObject(GameObject *gameObject);
+    void SetEnabled(bool enabled);
+    bool IsEnabled() const;
+
+    void SetVelocity(float3 value);
+    void AddVelocity(float3 delta);
+    void AddAcceleration(float3 delta);
+    void AddImpulse(float3 impulse);
+    void AddDisplacement(float3 delta);
+    void ClearForces();
+    void Step(float deltaTime);
+
+private:
+    bool m_enabled;
+};
+
+// ============================================================================
 // Camera
 // ============================================================================
 class Camera {

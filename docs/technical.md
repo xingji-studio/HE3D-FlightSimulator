@@ -522,6 +522,46 @@ if (box.Intersects(otherBox)) {
 }
 ```
 
+`PhysicsBody` 是绑定到 `GameObject` 的轻量运动积分器。启用后调用 `Step(deltaTime)` 会自动修改绑定对象的 `position`。
+
+```cpp
+class PhysicsBody {
+public:
+    GameObject *object;
+    float3 velocity;
+    float3 acceleration;
+    float linearDamping;
+};
+```
+
+PhysicsBody 函数：
+
+- `PhysicsBody()`
+- `explicit PhysicsBody(GameObject *gameObject)`
+- `void BindGameObject(GameObject *gameObject)`
+- `void SetEnabled(bool enabled)`
+- `bool IsEnabled() const`
+- `void SetVelocity(float3 value)`
+- `void AddVelocity(float3 delta)`
+- `void AddAcceleration(float3 delta)`
+- `void AddImpulse(float3 impulse)`
+- `void AddDisplacement(float3 delta)`
+- `void ClearForces()`
+- `void Step(float deltaTime)`
+
+开启物理后，不建议每帧直接改 `object.position`。需要移动物体时优先改 `velocity`、添加 `acceleration`，或者用 `AddDisplacement` 做一次受控位移。`PhysicsBody` 不做碰撞响应；碰撞检测仍使用 `CollisionBox`，撞到之后怎么修正位置由示例或游戏代码决定。
+
+示例：
+
+```cpp
+HE3D::PhysicsBody body(&object);
+body.SetEnabled(true);
+body.SetVelocity({0, 0, 5});
+body.AddAcceleration({0, -9.8f, 0});
+
+body.Step(deltaTime);
+```
+
 `Camera` 保存视图变换和视场角：
 
 ```cpp
