@@ -484,6 +484,44 @@ GameObject 函数：
 
 `Forward()` 返回局部 `{0, 0, 1}` 经过 `orientation` 旋转后的方向。
 
+`CollisionBox` 是绑定到 `GameObject` 的旋转碰撞箱。它只负责检测，不自动修改物体位置或速度。
+
+```cpp
+class CollisionBox {
+public:
+    GameObject *object;
+    float3 centerOffset;
+    float3 halfExtents;
+};
+```
+
+CollisionBox 函数：
+
+- `CollisionBox()`
+- `explicit CollisionBox(GameObject *gameObject)`
+- `void BindGameObject(GameObject *gameObject)`
+- `bool FitMesh()`
+- `bool FitMesh(const Mesh& mesh)`
+- `float3 Center() const`
+- `quat Orientation() const`
+- `bool IsValid() const`
+- `bool Contains(float3 point) const`
+- `bool Intersects(const CollisionBox& other) const`
+- `RayHit Raycast(const Ray& ray) const`
+
+`FitMesh` 会扫描 mesh 顶点，计算一个局部空间包围盒，写入 `centerOffset` 和 `halfExtents`。绑定了 `GameObject` 后，碰撞箱会跟随 `position` 和 `orientation`。
+
+示例：
+
+```cpp
+HE3D::CollisionBox box(&object);
+box.FitMesh();
+
+if (box.Intersects(otherBox)) {
+    // 示例或游戏代码决定碰撞后怎么处理。
+}
+```
+
 `Camera` 保存视图变换和视场角：
 
 ```cpp

@@ -89,6 +89,36 @@ public:
 };
 
 // ============================================================================
+// CollisionBox - oriented box bound to an optional GameObject
+// ============================================================================
+class CollisionBox {
+public:
+    GameObject *object;
+    float3      centerOffset;
+    float3      halfExtents;
+
+    CollisionBox();
+    explicit CollisionBox(GameObject *gameObject);
+
+    void BindGameObject(GameObject *gameObject);
+    bool FitMesh();
+    bool FitMesh(const Mesh& mesh);
+
+    float3 Center() const;
+    quat   Orientation() const;
+    bool   IsValid() const;
+
+    bool Contains(float3 point) const;
+    bool Intersects(const CollisionBox& other) const;
+    RayHit Raycast(const Ray& ray) const;
+
+private:
+    float3 AxisX() const;
+    float3 AxisY() const;
+    float3 AxisZ() const;
+};
+
+// ============================================================================
 // Camera
 // ============================================================================
 class Camera {

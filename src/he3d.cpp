@@ -301,7 +301,222 @@ static bool TriangleOutsideViewport(const float2 *ps, int width, int height)
 }
 
 // ============================================================================
-// [3] Mesh allocation helpers
+// [3] CollisionBox
+// ============================================================================
+CollisionBox::CollisionBox()
+    : object(nullptr), centerOffset{0,0,0}, halfExtents{0,0,0}
+{
+}
+
+CollisionBox::CollisionBox(GameObject *gameObject)
+    : object(gameObject), centerOffset{0,0,0}, halfExtents{0,0,0}
+{
+}
+
+void CollisionBox::BindGameObject(GameObject *gameObject)
+{
+    object = gameObject;
+}
+
+bool CollisionBox::FitMesh()
+{
+    if (!object || !object->mesh)
+    {
+        return false;
+    }
+    return FitMesh(*object->mesh);
+}
+
+bool CollisionBox::FitMesh(const Mesh& mesh)
+{
+    if (!mesh.vertices || mesh.vertCount <= 0)
+    {
+        centerOffset = {0,0,0};
+        halfExtents = {0,0,0};
+        return false;
+    }
+
+    float3 mn = mesh.vertices[0];
+    float3 mx = mesh.vertices[0];
+    for (int i = 1; i < mesh.vertCount; i++)
+    {
+        const float3& v = mesh.vertices[i];
+        if (v.x < mn.x) mn.x = v.x;
+        if (v.y < mn.y) mn.y = v.y;
+        if (v.z < mn.z) mn.z = v.z;
+        if (v.x > mx.x) mx.x = v.x;
+        if (v.y > mx.y) mx.y = v.y;
+        if (v.z > mx.z) mx.z = v.z;
+    }
+
+    centerOffset = (mn + mx) * 0.5f;
+    halfExtents = (mx - mn) * 0.5f;
+    return IsValid();
+}
+
+float3 CollisionBox::Center() const
+{
+    if (!object)
+    {
+        return centerOffset;
+    }
+    return object->position + object->orientation.rotate(centerOffset);
+}
+
+quat CollisionBox::Orientation() const
+{
+    return object ? object->orientation : quat();
+}
+
+bool CollisionBox::IsValid() const
+{
+    return halfExtents.x > 0.0f && halfExtents.y > 0.0f && halfExtents.z > 0.0f;
+}
+
+float3 CollisionBox::AxisX() const
+{
+    return Orientation().rotate({1,0,0}).normalizeFast();
+}
+
+float3 CollisionBox::AxisY() const
+{
+    return Orientation().rotate({0,1,0}).normalizeFast();
+}
+
+float3 CollisionBox::AxisZ() const
+{
+    return Orientation().rotate({0,0,1}).normalizeFast();
+}
+
+bool CollisionBox::Contains(float3 point) const
+{
+    if (!IsValid())
+    {
+        return false;
+    }
+
+    float3 d = point - Center();
+    float x = float3::dot(d, AxisX());
+    float y = float3::dot(d, AxisY());
+    float z = float3::dot(d, AxisZ());
+    return HE3D_ABS(x) <= halfExtents.x &&
+           HE3D_ABS(y) <= halfExtents.y &&
+           HE3D_ABS(z) <= halfExtents.z;
+}
+
+bool CollisionBox::Intersects(const CollisionBox& other) const
+{
+    if (!IsValid() || !other.IsValid())
+    {
+        return false;
+    }
+
+    float3 a[3] = {AxisX(), AxisY(), AxisZ()};
+    float3 b[3] = {other.AxisX(), other.AxisY(), other.AxisZ()};
+    float  ea[3] = {halfExtents.x, halfExtents.y, halfExtents.z};
+    float  eb[3] = {other.halfExtents.x, other.halfExtents.y, other.halfExtents.z};
+    float  r[3][3];
+    float  ar[3][3];
+
+    for (int i = 0; i < 3; i++)
+    {
+        for (int j = 0; j < 3; j++)
+        {
+            r[i][j] = float3::dot(a[i], b[j]);
+            ar[i][j] = fabsf(r[i][j]) + 0.000001f;
+        }
+    }
+
+    float3 delta = other.Center() - Center();
+    float t[3] = {
+        float3::dot(delta, a[0]),
+        float3::dot(delta, a[1]),
+        float3::dot(delta, a[2])
+    };
+
+    for (int i = 0; i < 3; i++)
+    {
+        float ra = ea[i];
+        float rb = eb[0] * ar[i][0] + eb[1] * ar[i][1] + eb[2] * ar[i][2];
+        if (fabsf(t[i]) > ra + rb) return false;
+    }
+
+    for (int j = 0; j < 3; j++)
+    {
+        float ra = ea[0] * ar[0][j] + ea[1] * ar[1][j] + ea[2] * ar[2][j];
+        float rb = eb[j];
+        float tj = fabsf(t[0] * r[0][j] + t[1] * r[1][j] + t[2] * r[2][j]);
+        if (tj > ra + rb) return false;
+    }
+
+    for (int i = 0; i < 3; i++)
+    {
+        for (int j = 0; j < 3; j++)
+        {
+            float ra = ea[(i + 1) % 3] * ar[(i + 2) % 3][j] +
+                       ea[(i + 2) % 3] * ar[(i + 1) % 3][j];
+            float rb = eb[(j + 1) % 3] * ar[i][(j + 2) % 3] +
+                       eb[(j + 2) % 3] * ar[i][(j + 1) % 3];
+            float tv = fabsf(t[(i + 2) % 3] * r[(i + 1) % 3][j] -
+                             t[(i + 1) % 3] * r[(i + 2) % 3][j]);
+            if (tv > ra + rb) return false;
+        }
+    }
+
+    return true;
+}
+
+RayHit CollisionBox::Raycast(const Ray& ray) const
+{
+    RayHit result;
+    if (!IsValid())
+    {
+        return result;
+    }
+
+    float3 c = Center();
+    float3 ax = AxisX();
+    float3 ay = AxisY();
+    float3 az = AxisZ();
+    float3 localOriginDelta = ray.origin - c;
+    float3 localOrigin = {
+        float3::dot(localOriginDelta, ax),
+        float3::dot(localOriginDelta, ay),
+        float3::dot(localOriginDelta, az)
+    };
+    float3 localDirection = {
+        float3::dot(ray.direction, ax),
+        float3::dot(ray.direction, ay),
+        float3::dot(ray.direction, az)
+    };
+
+    Ray localRay(localOrigin, localDirection);
+    AABB localBox(-halfExtents, halfExtents);
+    float nearDistance = 0.0f;
+    float farDistance = 0.0f;
+    if (!localRay.IntersectAABB(localBox, &nearDistance, &farDistance))
+    {
+        return result;
+    }
+
+    result.hit = true;
+    result.distance = nearDistance >= 0.0f ? nearDistance : farDistance;
+    result.position = ray.At(result.distance);
+
+    float3 p = localRay.At(result.distance);
+    float3 n = {0,0,0};
+    float dx = fabsf(fabsf(p.x) - halfExtents.x);
+    float dy = fabsf(fabsf(p.y) - halfExtents.y);
+    float dz = fabsf(fabsf(p.z) - halfExtents.z);
+    if (dx <= dy && dx <= dz) n = {p.x < 0.0f ? -1.0f : 1.0f, 0, 0};
+    else if (dy <= dz)        n = {0, p.y < 0.0f ? -1.0f : 1.0f, 0};
+    else                      n = {0, 0, p.z < 0.0f ? -1.0f : 1.0f};
+    result.normal = (ax * n.x + ay * n.y + az * n.z).normalizeFast();
+    return result;
+}
+
+// ============================================================================
+// [4] Mesh allocation helpers
 // ============================================================================
 bool Mesh::Init(int vertexCount)
 {
