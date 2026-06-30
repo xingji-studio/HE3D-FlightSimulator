@@ -548,8 +548,9 @@ PhysicsBody 函数：
 - `void AddDisplacement(float3 delta)`
 - `void ClearForces()`
 - `void Step(float deltaTime)`
+- `bool StepWithCollisions(float deltaTime, CollisionBox& selfBox, const CollisionBox *obstacles, int obstacleCount, int substeps = 4)`
 
-开启物理后，不建议每帧直接改 `object.position`。需要移动物体时优先改 `velocity`、添加 `acceleration`，或者用 `AddDisplacement` 做一次受控位移。`PhysicsBody` 不做碰撞响应；碰撞检测仍使用 `CollisionBox`，撞到之后怎么修正位置由示例或游戏代码决定。
+开启物理后，不建议每帧直接改 `object.position`。需要移动物体时优先改 `velocity`、添加 `acceleration`，或者用 `AddDisplacement` 做一次受控位移。`StepWithCollisions` 会把本帧移动拆成若干小步，碰到障碍碰撞箱时回退到上一安全位置并移除本次移动方向上的速度。
 
 示例：
 
@@ -560,6 +561,19 @@ body.SetVelocity({0, 0, 5});
 body.AddAcceleration({0, -9.8f, 0});
 
 body.Step(deltaTime);
+```
+
+带碰撞移动：
+
+```cpp
+HE3D::CollisionBox selfBox(&object);
+selfBox.FitMesh();
+
+HE3D::CollisionBox walls[1];
+walls[0].BindGameObject(&wall);
+walls[0].FitMesh();
+
+bool hit = body.StepWithCollisions(deltaTime, selfBox, walls, 1, 8);
 ```
 
 `Camera` 保存视图变换和视场角：

@@ -142,6 +142,9 @@ public:
     void AddDisplacement(float3 delta);
     void ClearForces();
     void Step(float deltaTime);
+    bool StepWithCollisions(float deltaTime, CollisionBox& selfBox,
+                            const CollisionBox *obstacles, int obstacleCount,
+                            int substeps = 4);
 
 private:
     bool m_enabled;

@@ -595,6 +595,84 @@ void PhysicsBody::Step(float deltaTime)
     object->position = object->position + velocity * deltaTime;
 }
 
+bool PhysicsBody::StepWithCollisions(float deltaTime, CollisionBox& selfBox,
+                                     const CollisionBox *obstacles, int obstacleCount,
+                                     int substeps)
+{
+    if (!m_enabled || !object || deltaTime <= 0.0f)
+    {
+        return false;
+    }
+
+    if (!obstacles || obstacleCount <= 0)
+    {
+        Step(deltaTime);
+        return false;
+    }
+
+    if (selfBox.object != object)
+    {
+        selfBox.BindGameObject(object);
+    }
+
+    if (substeps < 1)
+    {
+        substeps = 1;
+    }
+    if (substeps > 64)
+    {
+        substeps = 64;
+    }
+
+    velocity = velocity + acceleration * deltaTime;
+    if (linearDamping > 0.0f)
+    {
+        float damp = 1.0f - linearDamping * deltaTime;
+        if (damp < 0.0f) damp = 0.0f;
+        velocity = velocity * damp;
+    }
+
+    float3 totalMove = velocity * deltaTime;
+    float3 stepMove = totalMove / (float)substeps;
+    float moveSq = stepMove.lengthSq();
+    if (moveSq < 0.00000001f)
+    {
+        return false;
+    }
+
+    bool collided = false;
+    for (int step = 0; step < substeps; step++)
+    {
+        float3 previous = object->position;
+        object->position = object->position + stepMove;
+
+        bool hit = false;
+        for (int i = 0; i < obstacleCount; i++)
+        {
+            if (selfBox.Intersects(obstacles[i]))
+            {
+                hit = true;
+                break;
+            }
+        }
+
+        if (hit)
+        {
+            object->position = previous;
+            float3 moveDir = stepMove.normalizeFast();
+            float into = float3::dot(velocity, moveDir);
+            if (into > 0.0f)
+            {
+                velocity = velocity - moveDir * into;
+            }
+            collided = true;
+            break;
+        }
+    }
+
+    return collided;
+}
+
 // ============================================================================
 // [5] Mesh allocation helpers
 // ============================================================================

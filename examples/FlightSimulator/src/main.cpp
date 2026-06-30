@@ -218,12 +218,12 @@ int main(int argc, char** argv, char** envp) {
         float cR = InputCurve(iR, keys['A']||keys['a'], keys['D']||keys['d'], dt, ACC, REC);
 
         // Flight physics
-        // Yaw is applied around the world up axis so Q/E turns do not introduce
-        // roll drift when the wings are level. Pitch and roll remain local.
+        // Pitch, yaw, and roll are applied in aircraft-local space. This makes
+        // Q/E follow the current roll instead of always turning around world up.
         HE3D::quat dP = HE3D::quat::FromEuler({cP * 1.35f * dt, 0, 0});
         HE3D::quat dY = HE3D::quat::FromEuler({0, cY * 0.95f * dt, 0});
         HE3D::quat dR = HE3D::quat::FromEuler({0, 0, cR * 1.75f * dt});
-        plane.orientation = (dY * plane.orientation * dP * dR).normalizeFast();
+        plane.orientation = (plane.orientation * dP * dY * dR).normalizeFast();
         HE3D::float3 fwd = plane.Forward();
         plane.position = plane.position + fwd * (15.0f * dt);
 
