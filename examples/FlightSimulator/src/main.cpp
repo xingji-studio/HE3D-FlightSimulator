@@ -111,6 +111,14 @@ static float NormAngle(float a) {
     return a;
 }
 
+static HE3D::quat AxisAngleQuat(HE3D::float3 axis, float angle)
+{
+    axis = axis.normalizeFast();
+    float s, c;
+    HE3D::sincosf(angle * 0.5f, &s, &c);
+    return {c, axis.x * s, axis.y * s, axis.z * s};
+}
+
 // ============================================================================
 // Main
 // ============================================================================
@@ -149,6 +157,12 @@ int main(int argc, char** argv, char** envp) {
                                   FLIGHT_FALLBACK_AIRCRAFT_VERTEX_COUNT);
     }
     plane.position = {0, 13, 0};
+    HE3D::PhysicsBody planeBody(&plane);
+    planeBody.SetEnabled(true);
+    HE3D::CollisionBox planeBox(&plane);
+    if (!planeBox.FitMesh()) {
+        planeBox.halfExtents = {0.5f, 0.2f, 0.7f};
+    }
     HE3D::Texture* pTex  = HE3D::Texture::LoadBMP("biplane.bmp");
     bool hasTex    = (pTex && pTex->valid);
 
@@ -161,10 +175,14 @@ int main(int argc, char** argv, char** envp) {
     const float TS = (GC - 1) * GS;
     const int TN   = (RD * 2 + 1) * (RD * 2 + 1);
 
-    struct Tile { HE3D::GameObject obj; int gx, gz; bool active; };
+    struct Tile { HE3D::GameObject obj; HE3D::CollisionBox box; int gx, gz; bool active; };
     struct TileRequest { int gx, gz; };
     Tile* tiles = new Tile[TN];
-    for (int i = 0; i < TN; i++) { tiles[i].active = false; tiles[i].obj.mesh = nullptr; }
+    for (int i = 0; i < TN; i++) {
+        tiles[i].active = false;
+        tiles[i].obj.mesh = nullptr;
+        tiles[i].box.BindGameObject(&tiles[i].obj);
+    }
 
     int centerX = 0, centerZ = 0;
     bool dirty = true;
@@ -218,14 +236,27 @@ int main(int argc, char** argv, char** envp) {
         float cR = InputCurve(iR, keys['A']||keys['a'], keys['D']||keys['d'], dt, ACC, REC);
 
         // Flight physics
-        // Pitch, yaw, and roll are applied in aircraft-local space. This makes
-        // Q/E follow the current roll instead of always turning around world up.
+        // Yaw uses world-up when the wings are level, then blends toward the
+        // aircraft's local up vector as bank angle increases.
         HE3D::quat dP = HE3D::quat::FromEuler({cP * 1.35f * dt, 0, 0});
-        HE3D::quat dY = HE3D::quat::FromEuler({0, cY * 0.95f * dt, 0});
+        HE3D::float3 right = plane.orientation.rotate({1, 0, 0});
+        HE3D::float3 localUp = plane.orientation.rotate({0, 1, 0});
+        HE3D::float3 worldUp = {0, 1, 0};
+        float bankInfluence = HE3D_CLAMP(HE3D_ABS(right.y), 0.0f, 1.0f);
+        HE3D::float3 yawAxis = (worldUp * (1.0f - bankInfluence) + localUp * bankInfluence).normalizeFast();
+        HE3D::quat dY = AxisAngleQuat(yawAxis, cY * 0.95f * dt);
         HE3D::quat dR = HE3D::quat::FromEuler({0, 0, cR * 1.75f * dt});
-        plane.orientation = (plane.orientation * dP * dY * dR).normalizeFast();
+        plane.orientation = (dY * plane.orientation * dP * dR).normalizeFast();
         HE3D::float3 fwd = plane.Forward();
-        plane.position = plane.position + fwd * (15.0f * dt);
+        HE3D::CollisionBox obstacles[TN];
+        int obstacleCount = 0;
+        for (int i = 0; i < TN; i++) {
+            if (tiles[i].active && tiles[i].box.IsValid() && obstacleCount < TN) {
+                obstacles[obstacleCount++] = tiles[i].box;
+            }
+        }
+        planeBody.SetVelocity(fwd * 15.0f);
+        planeBody.StepWithCollisions(dt, planeBox, obstacles, obstacleCount, 8);
 
         // Camera
         // Follow the aircraft from behind while smoothing the yaw so quick
@@ -311,6 +342,10 @@ int main(int argc, char** argv, char** envp) {
                         }
                         tiles[i].obj.position = {wx, 0, wz};
                         tiles[i].active = (tiles[i].obj.mesh != nullptr);
+                        if (tiles[i].active) {
+                            tiles[i].box.BindGameObject(&tiles[i].obj);
+                            tiles[i].box.FitMesh();
+                        }
                         break;
                     }
                 }
