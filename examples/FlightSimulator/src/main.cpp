@@ -19,6 +19,9 @@ extern "C" void xapi_OutputSerial(char *str);
 #endif
 
 static void KeyHandler(int key, bool pressed, void *) {
+    if (key >= 'A' && key <= 'Z') {
+        key = key - 'A' + 'a';
+    }
     if (key >= 0 && key < 256) {
         keys[key] = pressed;
     }
@@ -119,6 +122,11 @@ static HE3D::quat AxisAngleQuat(HE3D::float3 axis, float angle)
     return {c, axis.x * s, axis.y * s, axis.z * s};
 }
 
+static float TerrainHeightSample(float x, float z, void *)
+{
+    return TerrainHeightAt(x, z);
+}
+
 // ============================================================================
 // Main
 // ============================================================================
@@ -145,6 +153,7 @@ int main(int argc, char** argv, char** envp) {
 
     // ---- Scene ----
     HE3D::Camera cam;
+    cam.fov = 90.0f;
     cam.position = {0, 12, 5};
 
     HE3D::GameObject plane;
@@ -174,13 +183,24 @@ int main(int argc, char** argv, char** envp) {
     const int GC   = 7;
     const float TS = (GC - 1) * GS;
     const int TN   = (RD * 2 + 1) * (RD * 2 + 1);
+    HE3D::HeightFieldCollider terrainCollider(TerrainHeightSample, nullptr, GC, GS);
 
     struct Tile { HE3D::GameObject obj; int gx, gz; bool active; };
     struct TileRequest { int gx, gz; };
     Tile* tiles = new Tile[TN];
+    HE3D::HeightFieldCollider::Tile *terrainTiles = new HE3D::HeightFieldCollider::Tile[TN];
+    if (!tiles || !terrainTiles) {
+        delete[] terrainTiles;
+        delete[] tiles;
+        delete plane.mesh;
+        delete pTex;
+        HE3D::DestroyWindow(win);
+        return 1;
+    }
     for (int i = 0; i < TN; i++) {
         tiles[i].active = false;
         tiles[i].obj.mesh = nullptr;
+        terrainTiles[i].active = false;
     }
 
     int centerX = 0, centerZ = 0;
@@ -220,8 +240,6 @@ int main(int argc, char** argv, char** envp) {
         lt = now;
         if (dt > 0.1f) dt = 0.1f;
 
-        cam.Update(dt);
-
         bool fxaaKeyDown = keys['F'] || keys['f'];
         if (fxaaKeyDown && !fxaaKeyWasDown) {
             HE3D::SetFxaaEnabled(!HE3D::IsFxaaEnabled());
@@ -249,14 +267,8 @@ int main(int argc, char** argv, char** envp) {
         HE3D::float3 fwd = plane.Forward();
         planeBody.SetVelocity(fwd * 15.0f);
         planeBody.Step(dt);
-        float terrainY = TerrainHeightAt(plane.position.x, plane.position.z);
-        float planeBottomY = planeBox.Center().y - planeBox.halfExtents.y;
-        if (planeBottomY < terrainY + 0.05f) {
-            plane.position.y += (terrainY + 0.05f) - planeBottomY;
-            if (planeBody.velocity.y < 0.0f) {
-                planeBody.velocity.y = 0.0f;
-            }
-        }
+        float sweep = 0.35f + planeBody.velocity.length() * 0.02f;
+        planeBody.ResolveHeightField(planeBox, terrainCollider, terrainTiles, TN, sweep);
 
         // Camera
         // Follow the aircraft from behind while smoothing the yaw so quick
@@ -291,7 +303,7 @@ int main(int argc, char** argv, char** envp) {
                     for (int dz = -RD; dz <= RD; dz++)
                         if (tiles[i].gx == centerX + dx && tiles[i].gz == centerZ + dz)
                             { found = true; break; }
-                if (!found) { tiles[i].active = false; }
+                if (!found) { tiles[i].active = false; terrainTiles[i].active = false; }
             }
 
             for (int dx = -RD; dx <= RD; dx++) {
@@ -342,6 +354,11 @@ int main(int argc, char** argv, char** envp) {
                         }
                         tiles[i].obj.position = {wx, 0, wz};
                         tiles[i].active = (tiles[i].obj.mesh != nullptr);
+                        if (tiles[i].active) {
+                            terrainCollider.BuildTile(terrainTiles[i], wx, wz);
+                        } else {
+                            terrainTiles[i].active = false;
+                        }
                         break;
                     }
                 }
@@ -379,6 +396,7 @@ int main(int argc, char** argv, char** envp) {
     delete plane.mesh;
     delete pTex;
     for (int i = 0; i < TN; i++) delete tiles[i].obj.mesh;
+    delete[] terrainTiles;
     delete[] tiles;
     HE3D::DestroyWindow(win);
     return 0;

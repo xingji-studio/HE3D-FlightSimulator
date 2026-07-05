@@ -1,5 +1,6 @@
 # Build outputs
 build/
+build-xapi/
 build-root/
 he3d_flight
 he3d_flight.exe
@@ -15,6 +16,7 @@ obj-tui/
 filebrowser
 filebrowser.db
 .claude/
+Develop_Note.md
 
 # Editor/OS noise
 .DS_Store
@@ -26,3 +28,6 @@ OldSrc/
 
 # Platform SDK documentation (not for distribution)
 XJ380_API_Spec_CPP_1_3.pdf
+
+# Large local example assets; publish through Git LFS or release assets.
+examples/AirplaneTest/assets/model.obj

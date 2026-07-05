@@ -10,16 +10,18 @@ struct Window {
     SDL_Window *window;
     SDL_Renderer *renderer;
     SDL_Texture *texture;
-    int textureWidth;
-    int textureHeight;
+    int32_t textureWidth;
+    int32_t textureHeight;
     KeyCallback keyCallback;
     void *keyUser;
+    int32_t pressedKeys[128];
+    int32_t pressedKeyCount;
     bool closeRequested;
 };
 
-static void *SdlAlloc(unsigned long size)
+static void *SdlAlloc(uint64_t size)
 {
-    return std::malloc(size);
+    return std::malloc((unsigned long)size);
 }
 
 static void SdlFree(void *ptr)
@@ -29,7 +31,7 @@ static void SdlFree(void *ptr)
 
 static bool SdlLoadFile(const char *path, FileData *outFile)
 {
-    if (!outFile)
+    if (!path || !outFile)
     {
         return false;
     }
@@ -80,7 +82,7 @@ static bool SdlLoadFile(const char *path, FileData *outFile)
 
     outFile->handle = data;
     outFile->data = data;
-    outFile->length = (unsigned long long)size;
+    outFile->length = (uint64_t)size;
     return true;
 }
 
@@ -99,7 +101,7 @@ static void SdlCloseFile(FileData *file)
 
 static Window *SdlCreateWindow(const WindowDesc *desc)
 {
-    if (!desc)
+    if (!desc || desc->width <= 0 || desc->height <= 0)
     {
         return nullptr;
     }
@@ -138,6 +140,7 @@ static Window *SdlCreateWindow(const WindowDesc *desc)
     window->textureHeight = 0;
     window->keyCallback = nullptr;
     window->keyUser = nullptr;
+    window->pressedKeyCount = 0;
     window->closeRequested = false;
     return window;
 }
@@ -186,6 +189,78 @@ static void SdlSetKeyCallback(Window *window, KeyCallback callback, void *user)
     window->keyUser = user;
 }
 
+static int32_t NormalizeSdlKey(SDL_Keycode keycode)
+{
+    int32_t key = (int32_t)keycode;
+    if (key >= 'A' && key <= 'Z')
+    {
+        key += 'a' - 'A';
+    }
+    return key;
+}
+
+static void SdlDispatchKey(Window *window, int32_t key, bool pressed)
+{
+    if (!window || !window->keyCallback)
+    {
+        return;
+    }
+
+    window->keyCallback(key, pressed, window->keyUser);
+}
+
+static void SdlRememberKey(Window *window, int32_t key)
+{
+    if (!window)
+    {
+        return;
+    }
+
+    for (int32_t i = 0; i < window->pressedKeyCount; i++)
+    {
+        if (window->pressedKeys[i] == key)
+        {
+            return;
+        }
+    }
+    if (window->pressedKeyCount < (int32_t)(sizeof(window->pressedKeys) / sizeof(window->pressedKeys[0])))
+    {
+        window->pressedKeys[window->pressedKeyCount++] = key;
+    }
+}
+
+static void SdlForgetKey(Window *window, int32_t key)
+{
+    if (!window)
+    {
+        return;
+    }
+
+    for (int32_t i = 0; i < window->pressedKeyCount;)
+    {
+        if (window->pressedKeys[i] == key)
+        {
+            window->pressedKeys[i] = window->pressedKeys[--window->pressedKeyCount];
+            continue;
+        }
+        i++;
+    }
+}
+
+static void SdlReleaseAllKeys(Window *window)
+{
+    if (!window)
+    {
+        return;
+    }
+
+    for (int32_t i = 0; i < window->pressedKeyCount; i++)
+    {
+        SdlDispatchKey(window, window->pressedKeys[i], false);
+    }
+    window->pressedKeyCount = 0;
+}
+
 static void SdlPollEvents(Window *window)
 {
     if (!window)
@@ -200,18 +275,27 @@ static void SdlPollEvents(Window *window)
         {
             window->closeRequested = true;
         }
+        else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
+        {
+            SdlReleaseAllKeys(window);
+        }
         else if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP)
         {
             bool pressed = event.type == SDL_EVENT_KEY_DOWN;
-            int key = (int)event.key.key;
+            int32_t key = NormalizeSdlKey(event.key.key);
+            if (pressed)
+            {
+                SdlRememberKey(window, key);
+            }
+            else
+            {
+                SdlForgetKey(window, key);
+            }
             if (key == 27 && pressed)
             {
                 window->closeRequested = true;
             }
-            if (window->keyCallback)
-            {
-                window->keyCallback(key, pressed, window->keyUser);
-            }
+            SdlDispatchKey(window, key, pressed);
         }
     }
 }
@@ -226,12 +310,12 @@ static double SdlTimeSeconds()
     return (double)SDL_GetTicksNS() * 0.000000001;
 }
 
-static void SdlSleepMilliseconds(unsigned long long milliseconds)
+static void SdlSleepMilliseconds(uint64_t milliseconds)
 {
     SDL_Delay((Uint32)milliseconds);
 }
 
-static bool SdlEnsureTexture(Window *window, int width, int height)
+static bool SdlEnsureTexture(Window *window, int32_t width, int32_t height)
 {
     if (window->texture && window->textureWidth == width && window->textureHeight == height)
     {
@@ -258,7 +342,7 @@ static bool SdlEnsureTexture(Window *window, int width, int height)
     return true;
 }
 
-static void SdlPresent(Window *window, int width, int height, const ColorA *pixels)
+static void SdlPresent(Window *window, int32_t width, int32_t height, const ColorA *pixels)
 {
     if (!window || !pixels || width <= 0 || height <= 0)
     {

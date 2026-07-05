@@ -1,13 +1,12 @@
 /*
  * HE3D Flight Simulator - simulation-specific mesh data.
+ * HE3D 飞行模拟器：示例专用网格数据。
  */
 #include "flight_sim.hpp"
 
-using namespace HE3D;
+const HE3D::int32_t FLIGHT_FALLBACK_AIRCRAFT_VERTEX_COUNT = 39;
 
-const int FLIGHT_FALLBACK_AIRCRAFT_VERTEX_COUNT = 39;
-
-const float3 FLIGHT_FALLBACK_AIRCRAFT_VERTICES[] = {
+const HE3D::float3 FLIGHT_FALLBACK_AIRCRAFT_VERTICES[] = {
     { 0.07f, 0.0f, 0.45f}, { 0.0f, 0.07f, 0.45f}, { 0.07f, 0.0f, -0.45f},
     { 0.0f, 0.07f, 0.45f}, { 0.0f, 0.07f, -0.45f}, { 0.07f, 0.0f, -0.45f},
     { 0.0f, 0.07f, 0.45f}, {-0.07f, 0.0f, 0.45f}, { 0.0f, 0.07f, -0.45f},
@@ -26,7 +25,7 @@ const float3 FLIGHT_FALLBACK_AIRCRAFT_VERTICES[] = {
     { 0.0f, 0.0f,-0.50f}, { 0.0f, 0.1f,-0.60f}, { 0.0f, 0.0f,-0.60f}
 };
 
-const float2 FLIGHT_FALLBACK_AIRCRAFT_UVS[] = {
+const HE3D::float2 FLIGHT_FALLBACK_AIRCRAFT_UVS[] = {
     {0,0}, {1,0}, {0,1}, {1,0}, {1,1}, {0,1},
     {0,0}, {1,0}, {0,1}, {1,0}, {1,1}, {0,1},
     {0,0}, {1,0}, {0,1}, {1,0}, {1,1}, {0,1},
@@ -37,7 +36,7 @@ const float2 FLIGHT_FALLBACK_AIRCRAFT_UVS[] = {
 };
 
 
-static float FlightNoise(int x, int z)
+static float FlightNoiseGrid(HE3D::int32_t x, HE3D::int32_t z)
 {
     int n = x + z * 57;
     n     = (n << 13) ^ n;
@@ -45,19 +44,47 @@ static float FlightNoise(int x, int z)
     return 1.0f - (float)(mixed & 0x7fffffff) / 1073741824.0f;
 }
 
+static float SmoothStep(float t)
+{
+    return t * t * (3.0f - 2.0f * t);
+}
+
+static float Lerp(float a, float b, float t)
+{
+    return a + (b - a) * t;
+}
+
+static float FlightNoise(float x, float z)
+{
+    int ix = (int)HE3D::floorf(x);
+    int iz = (int)HE3D::floorf(z);
+    float fx = x - (float)ix;
+    float fz = z - (float)iz;
+    float sx = SmoothStep(fx);
+    float sz = SmoothStep(fz);
+
+    float n00 = FlightNoiseGrid(ix,     iz);
+    float n10 = FlightNoiseGrid(ix + 1, iz);
+    float n01 = FlightNoiseGrid(ix,     iz + 1);
+    float n11 = FlightNoiseGrid(ix + 1, iz + 1);
+    float nx0 = Lerp(n00, n10, sx);
+    float nx1 = Lerp(n01, n11, sx);
+    return Lerp(nx0, nx1, sz);
+}
+
 float TerrainHeightAt(float x, float z)
 {
-    float large = FlightNoise((int)(x * 0.05f), (int)(z * 0.05f)) * 8.0f;
-    float small = FlightNoise((int)(x * 0.2f),  (int)(z * 0.2f))  * 1.5f;
+    float large = FlightNoise(x * 0.05f, z * 0.05f) * 8.0f;
+    float small = FlightNoise(x * 0.2f,  z * 0.2f)  * 1.5f;
     return large + small;
 }
 
-Mesh *CreatePlane(int gridCount, float step, float worldX, float worldZ)
+HE3D::Mesh *CreatePlane(HE3D::int32_t gridCount, float step, float worldX, float worldZ)
 {
     int triCount  = (gridCount - 1) * (gridCount - 1) * 2;
     int vertCount = triCount * 3;
 
-    Mesh *mesh = Mesh::Create(vertCount);
+    HE3D::Mesh *mesh = HE3D::Mesh::Create(vertCount);
     if (!mesh)
     {
         return nullptr;
@@ -71,7 +98,7 @@ Mesh *CreatePlane(int gridCount, float step, float worldX, float worldZ)
     return mesh;
 }
 
-bool UpdatePlaneMesh(Mesh *mesh, int gridCount, float step, float worldX, float worldZ)
+bool UpdatePlaneMesh(HE3D::Mesh *mesh, HE3D::int32_t gridCount, float step, float worldX, float worldZ)
 {
     if (!mesh || !mesh->vertices || !mesh->uvs || gridCount < 2)
     {
@@ -122,10 +149,10 @@ bool UpdatePlaneMesh(Mesh *mesh, int gridCount, float step, float worldX, float 
             float h3 = useHeightCache ? heightCache[z * gridCount + x + 1] : TerrainHeightAt(wx1, wz0);
             float h4 = useHeightCache ? heightCache[(z + 1) * gridCount + x + 1] : TerrainHeightAt(wx1, wz1);
 
-            float3 v1 = {lx0, h1, lz0};
-            float3 v2 = {lx0, h2, lz1};
-            float3 v3 = {lx1, h3, lz0};
-            float3 v4 = {lx1, h4, lz1};
+            HE3D::float3 v1 = {lx0, h1, lz0};
+            HE3D::float3 v2 = {lx0, h2, lz1};
+            HE3D::float3 v3 = {lx1, h3, lz0};
+            HE3D::float3 v4 = {lx1, h4, lz1};
 
             int i = mesh->vertCount;
             if (i + 6 > mesh->capacity)

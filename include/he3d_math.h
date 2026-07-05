@@ -1,26 +1,30 @@
 #pragma once
 /*
- * HE3D Engine for 3D - Math Library (Aggressively Optimized)
+ * HE3D Engine for 3D - Math Library / HE3D 三维引擎数学库
  *
  * No standard library dependencies. No platform API dependencies.
+ * 不依赖标准库，也不依赖平台 API。
  *
- * Optimization strategy:
- *   - Keep math self-contained for freestanding XAPI builds.
- *   - Use two Newton steps for reciprocal square root.
- *   - Combined sin+cos (sincos) halves trig work for quaternion construction.
- *   - Minimax polynomial for sin/cos gives better accuracy than truncated Taylor.
- *   - Everything is static+always_inline so the compiler can constant-fold and
- *     optimize hot paths.
+ * Optimization strategy / 优化策略:
+ *   - Math is self-contained for freestanding XAPI builds.
+ *     数学函数自包含，适用于 freestanding XAPI 构建。
+ *   - Reciprocal square root uses two Newton steps.
+ *     快速平方根倒数使用两次 Newton 迭代。
+ *   - sincosf computes sin and cos together for quaternion construction.
+ *     sincosf 为四元数构造同时计算 sin 和 cos。
+ *   - sin/cos use minimax polynomial approximation.
+ *     sin/cos 使用 minimax 多项式近似。
  *
- * Performance-first: no libm dependency, all functions always_inline.
+ * Performance-first: no libm dependency, all functions are always_inline.
+ * 性能优先：不依赖 libm，所有函数强制内联。
  */
 
 // ============================================================================
-// [0] Feature detection & compiler hints
+// [0] Feature detection and compiler hints / 功能检测和编译器提示
 // ============================================================================
 
-// xxcc targets a freestanding XJ380 environment — no libm, no math builtins.
-// All math functions are self-implemented with performance-tuned software paths.
+// XJ380/XAPI builds are freestanding; libm and math builtins are not required.
+// XJ380/XAPI 构建是 freestanding 环境，不要求 libm 或数学内建函数。
 
 #define HE3D_ALWAYS_INLINE static inline __attribute__((always_inline))
 #define HE3D_MEMBER_INLINE inline __attribute__((always_inline))
@@ -29,26 +33,36 @@
 
 namespace HE3D {
 
+typedef __INT8_TYPE__   int8_t;
+typedef __INT16_TYPE__  int16_t;
+typedef __INT32_TYPE__  int32_t;
+typedef __INT64_TYPE__  int64_t;
+typedef __UINT8_TYPE__  uint8_t;
+typedef __UINT16_TYPE__ uint16_t;
+typedef __UINT32_TYPE__ uint32_t;
+typedef __UINT64_TYPE__ uint64_t;
+
 // ============================================================================
-// [1] Scalar math — abs / fabs / floor / ceil / round
+// [1] Scalar math: abs, fabs, floor, ceil, round / 标量数学函数
 // ============================================================================
 
 HE3D_ALWAYS_INLINE float fabsf(float x) {
     return x < 0.0f ? -x : x;
 }
 
-HE3D_ALWAYS_INLINE int abs(int x) {
+HE3D_ALWAYS_INLINE int32_t abs(int32_t x) {
     return x < 0 ? -x : x;
 }
 
 HE3D_ALWAYS_INLINE float floorf(float x) {
-    int xi = (int)x;
-    // Branchless: subtract 1 if integer cast rounds toward zero past x
+    int32_t xi = (int32_t)x;
+    // Correct the truncation-toward-zero cast for negative fractions.
+    // 修正负小数转整数时向零截断造成的 floor 偏差。
     return (float)xi - (float)(xi > x);
 }
 
 HE3D_ALWAYS_INLINE float ceilf(float x) {
-    int xi = (int)x;
+    int32_t xi = (int32_t)x;
     return (float)xi + (float)(xi < x);
 }
 
@@ -56,27 +70,31 @@ HE3D_ALWAYS_INLINE float roundf(float x) {
     return floorf(x + 0.5f);
 }
 
-// Fractional part — branchless texture coordinate wrap
+// Fractional part for wrapped texture coordinates.
+// 用于纹理坐标环绕的小数部分。
 HE3D_ALWAYS_INLINE float fracf(float x) {
-    float xi = (float)(int)x;
+    float xi = (float)(int32_t)x;
     float frac = x - xi;
     return frac < 0.0f ? frac + 1.0f : frac;
 }
 
 // ============================================================================
-// [2] sqrt — public sqrt via reciprocal sqrt, plus an internal precise helper
+// [2] sqrt: public sqrt via reciprocal sqrt, plus precise helper
+// [2] sqrt：公开 sqrt 使用快速平方根倒数，另保留高精度辅助函数
 // ============================================================================
 
-// Precise software sqrt: bit-manipulation for initial guess, then 5 Newton
-// iterations. Kept as an internal helper for places that need the tighter path.
+// Precise software sqrt: exponent-based seed plus five Newton iterations.
+// 高精度软件 sqrt：使用指数位生成初值，再执行五次 Newton 迭代。
 HE3D_ALWAYS_INLINE float sqrtf_precise(float x) {
     if (HE3D_UNLIKELY(x <= 0.0f)) return 0.0f;
-    // Initial guess: halve exponent, keep mantissa
-    union { float f; int i; } u;
+    // Initial guess: halve the exponent and keep the mantissa.
+    // 初值：指数减半，保留尾数。
+    union { float f; int32_t i; } u;
     u.f = x;
-    u.i = (u.i >> 1) + 0x1FC00000;  // approximate sqrt via exponent manipulation
+    u.i = (u.i >> 1) + 0x1FC00000;  // exponent-based sqrt seed / 基于指数位的 sqrt 初值
     float r = u.f;
-    // 5 Newton iterations: r = (r + x/r) * 0.5
+    // Five Newton iterations: r = (r + x/r) * 0.5.
+    // 五次 Newton 迭代：r = (r + x/r) * 0.5。
     r = (r + x / r) * 0.5f;
     r = (r + x / r) * 0.5f;
     r = (r + x / r) * 0.5f;
@@ -86,15 +104,15 @@ HE3D_ALWAYS_INLINE float sqrtf_precise(float x) {
 }
 
 // ============================================================================
-// [3] Reciprocal sqrt
+// [3] Reciprocal sqrt / 平方根倒数
 // ============================================================================
-// Bit-level seed plus two Newton iterations: fast enough for normalizeFast(),
-// and much more accurate than a one-iteration approximation.
+// Bit-level seed plus two Newton iterations for normalizeFast().
+// 位级初值加两次 Newton 迭代，用于 normalizeFast()。
 
 HE3D_ALWAYS_INLINE float rsqrtf(float x) {
     if (HE3D_UNLIKELY(x <= 0.0f)) return 0.0f;
     float x2 = x * 0.5f;
-    union { float f; unsigned int i; } u;
+    union { float f; uint32_t i; } u;
     u.f = x;
     u.i = 0x5f3759dfu - (u.i >> 1);
     float y = u.f;
@@ -109,36 +127,37 @@ HE3D_ALWAYS_INLINE float sqrtf(float x) {
 }
 
 // ============================================================================
-// [4] sin / cos / tan — minimax-polynomial software
+// [4] sin, cos, tan: minimax polynomial software path / 三角函数软件实现
 // ============================================================================
 
-// Software sin/cos using minimax polynomial (degree 7) on [-PI, PI].
-// Better accuracy than truncated Taylor at the same operation count.
+// Software sin/cos use a minimax polynomial after range reduction.
+// 软件 sin/cos 先做范围规约，再使用 minimax 多项式。
 HE3D_ALWAYS_INLINE float sinf(float x) {
-    // Range reduction to [-PI, PI].  The period is TAU, not PI; using PI here
-    // flips cos/sin signs at half-turn boundaries and breaks camera rotation.
+    // Reduce to [-PI, PI] with period TAU.
+    // 用 TAU 作为周期，将角度规约到 [-PI, PI]。
     if (x >  3.141592653589793f) {
-        int n = (int)(x * 0.15915494309189535f + 0.5f);
+        int32_t n = (int32_t)(x * 0.15915494309189535f + 0.5f);
         x -= (float)n * 6.283185307179586f;
     }
     if (x < -3.141592653589793f) {
-        int n = (int)(x * -0.15915494309189535f + 0.5f);
+        int32_t n = (int32_t)(x * -0.15915494309189535f + 0.5f);
         x += (float)n * 6.283185307179586f;
     }
-    // Mirror to [-PI/2, PI/2] before evaluating the polynomial. This keeps
-    // half-turns stable for camera and object quaternions.
+    // Mirror to [-PI/2, PI/2] before evaluating the polynomial.
+    // 计算多项式前先镜像到 [-PI/2, PI/2]。
     if (x > 1.5707963267948966f) {
         x = 3.141592653589793f - x;
     } else if (x < -1.5707963267948966f) {
         x = -3.141592653589793f - x;
     }
 
-    // Now x in [-PI/2, PI/2]. Minimax polynomial (relative error < 1e-7).
+    // x is now in [-PI/2, PI/2]; evaluate the minimax polynomial.
+    // 此时 x 位于 [-PI/2, PI/2]，开始计算 minimax 多项式。
     float x2 = x * x;
     float r = x;
-    r += x * x2 * -0.16666656732559204f;      // ~ -1/3!  (minimax tuned)
-    r += x * x2 * x2 *  0.0083330258358717f;  // ~  1/5!
-    r += x * x2 * x2 * x2 * -0.0001980740614f; // ~ -1/7!
+    r += x * x2 * -0.16666656732559204f;       // minimax term near -1/3! / 接近 -1/3! 的 minimax 项
+    r += x * x2 * x2 *  0.0083330258358717f;   // minimax term near  1/5! / 接近  1/5! 的 minimax 项
+    r += x * x2 * x2 * x2 * -0.0001980740614f; // minimax term near -1/7! / 接近 -1/7! 的 minimax 项
     return r;
 }
 
@@ -151,9 +170,10 @@ HE3D_ALWAYS_INLINE float tanf(float x) {
 }
 
 // ============================================================================
-// [5] sincos — compute sin and cos in one call
+// [5] sincos: compute sin and cos in one call / 一次调用同时计算 sin 和 cos
 // ============================================================================
-// halving the trig work for quaternion construction (FromEuler needs 6 calls).
+// Quaternion construction uses three sincosf calls instead of six trig calls.
+// 四元数构造使用三次 sincosf，而不是六次三角函数调用。
 
 HE3D_ALWAYS_INLINE void sincosf(float x, float *s, float *c) {
     *s = sinf(x);
@@ -161,22 +181,26 @@ HE3D_ALWAYS_INLINE void sincosf(float x, float *s, float *c) {
 }
 
 // ============================================================================
-// [6] atan2 — rational approximation with quadrant correction
+// [6] atan2: rational approximation with quadrant correction / 带象限修正的有理近似
 // ============================================================================
 
 HE3D_ALWAYS_INLINE float atan2f(float y, float x) {
     float ax = fabsf(x);
-    if (ax < 0.000001f)
+    if (ax < 0.000001f) {
+        if (fabsf(y) < 0.000001f) return 0.0f;
         return (y > 0.0f) ? 1.57079632679f : -1.57079632679f;
+    }
 
-    // Minimax rational approximation for atan(z) on [0, 1]
+    // Minimax rational approximation for atan(z) on [0, 1].
+    // atan(z) 在 [0, 1] 上的 minimax 有理近似。
     float z = y / x;
     float absZ = fabsf(z);
-    int   inv  = (absZ > 1.0f);
+    int32_t inv = (absZ > 1.0f);
     if (inv) z = 1.0f / z;
 
     float z2 = z * z;
-    // Optimized coefficients (Remez, degree 7 numerator)
+    // Coefficients generated for this approximation.
+    // 该近似式使用的系数。
     float at = z * (1.0f + z2 * (
         -0.333333283662796f + z2 * (
          0.199993550777435f + z2 * (
@@ -189,7 +213,7 @@ HE3D_ALWAYS_INLINE float atan2f(float y, float x) {
 }
 
 // ============================================================================
-// [7] Utility macros — clamped, branch-predictable
+// [7] Utility macros / 工具宏
 // ============================================================================
 #define HE3D_MIN(a, b)         ((a) < (b) ? (a) : (b))
 #define HE3D_MAX(a, b)         ((a) > (b) ? (a) : (b))
@@ -197,13 +221,14 @@ HE3D_ALWAYS_INLINE float atan2f(float y, float x) {
 #define HE3D_ABS(x)            ((x) >= 0 ? (x) : -(x))
 #define HE3D_DEG2RAD(d)        ((d) * 0.017453292519943295f)
 
-// Pre-computed high-precision constants (avoid repeated macro expansion)
+// Precomputed constants used by math, transforms, and projection code.
+// 数学、变换和投影代码使用的预计算常量。
 static const float HE3D_PI       = 3.14159265358979323846f;
 static const float HE3D_TAU      = 6.28318530717958647692f;
 static const float HE3D_PI_DIV_2 = 1.57079632679489661923f;
 
 // ============================================================================
-// [8] float2 — 2D vector (UV coordinates, screen positions)
+// [8] float2: 2D vector for UVs and screen positions / 二维向量，用于 UV 和屏幕坐标
 // ============================================================================
 struct float2 {
     float x, y;
@@ -218,14 +243,14 @@ struct float2 {
 };
 
 // ============================================================================
-// [9] float3 — 3D vector (vertices, normals, positions) — OPTIMIZED
+// [9] float3: 3D vector for vertices, normals, and positions / 三维向量，用于顶点、法线和位置
 // ============================================================================
 struct float3 {
     float x, y, z;
 
     HE3D_MEMBER_INLINE float3(float _x = 0, float _y = 0, float _z = 0) : x(_x), y(_y), z(_z) {}
 
-    // ---- Arithmetic operators ----
+    // Arithmetic operators / 算术运算符
     HE3D_MEMBER_INLINE float3 operator+(const float3& v) const { return {x + v.x, y + v.y, z + v.z}; }
     HE3D_MEMBER_INLINE float3 operator-(const float3& v) const { return {x - v.x, y - v.y, z - v.z}; }
     HE3D_MEMBER_INLINE float3 operator*(float s)        const { return {x * s, y * s, z * s}; }
@@ -233,18 +258,20 @@ struct float3 {
     HE3D_MEMBER_INLINE float3 operator/(float s)        const { float inv = 1.0f/s; return {x * inv, y * inv, z * inv}; }
     HE3D_MEMBER_INLINE float3 operator-()               const { return {-x, -y, -z}; }
 
-    // ---- Geometry ----
+    // Geometry helpers / 几何辅助函数
     HE3D_MEMBER_INLINE float lengthSq() const { return x*x + y*y + z*z; }
     HE3D_MEMBER_INLINE float length()   const { return sqrtf(lengthSq()); }
 
-    // Standard normalize: sqrt + divide
+    // Standard normalize: sqrt plus divide.
+    // 标准归一化：sqrt 加除法。
     HE3D_MEMBER_INLINE float3 normalize() const {
         float lsq = lengthSq();
         if (HE3D_UNLIKELY(lsq < 0.0000001f)) return {0,0,0};
         return (*this) * (1.0f / sqrtf(lsq));
     }
 
-    // Fast normalize: keeps the reciprocal-square-root operation in one place.
+    // Fast normalize: use the reciprocal-square-root path.
+    // 快速归一化：使用快速平方根倒数路径。
     HE3D_MEMBER_INLINE float3 normalizeFast() const {
         float lsq = lengthSq();
         if (HE3D_UNLIKELY(lsq < 0.0000001f)) return {0,0,0};
@@ -267,7 +294,8 @@ struct float3 {
         return {a.x + (b.x - a.x)*t, a.y + (b.y - a.y)*t, a.z + (b.z - a.z)*t};
     }
 
-    // ---- Rotations around axes (Euler) — precomputed sin/cos caller ----
+    // Axis rotations with caller-provided sin/cos.
+    // 使用调用方预计算 sin/cos 的轴旋转。
     HE3D_MEMBER_INLINE float3 rotateY(float s, float c) const {
         return {x * c + z * s, y, -x * s + z * c};
     }
@@ -278,7 +306,8 @@ struct float3 {
         return {x * c - y * s, x * s + y * c, z};
     }
 
-    // ---- Legacy Euler rotation (compute sin/cos internally) ----
+    // Axis rotations that compute sin/cos internally.
+    // 内部计算 sin/cos 的轴旋转。
     HE3D_MEMBER_INLINE float3 rotateY(float angle) const {
         float s, c; sincosf(angle, &s, &c); return rotateY(s, c);
     }
@@ -291,7 +320,7 @@ struct float3 {
 };
 
 // ============================================================================
-// [10] color3 — linear RGB color
+// [10] color3: linear RGB color / 线性 RGB 颜色
 // ============================================================================
 struct color3 {
     float r, g, b;
@@ -310,7 +339,7 @@ struct color3 {
 };
 
 // ============================================================================
-// [11] Ray — 3D query helper
+// [11] Ray: 3D query helper / 三维查询辅助类型
 // ============================================================================
 struct RayHit {
     bool   hit;
@@ -330,6 +359,12 @@ struct AABB {
 
     HE3D_MEMBER_INLINE AABB(float3 _min = {0,0,0}, float3 _max = {0,0,0})
         : min(_min), max(_max) {}
+
+    HE3D_MEMBER_INLINE bool Intersects(const AABB& other) const {
+        return !(max.x < other.min.x || min.x > other.max.x ||
+                 max.y < other.min.y || min.y > other.max.y ||
+                 max.z < other.min.z || min.z > other.max.z);
+    }
 };
 
 struct Ray {
@@ -470,7 +505,7 @@ struct Ray {
 };
 
 // ============================================================================
-// [12] quat — Quaternion for 3D rotation — OPTIMIZED
+// [12] quat: quaternion rotation / 四元数旋转
 // ============================================================================
 struct quat {
     float w, x, y, z;
@@ -478,14 +513,13 @@ struct quat {
     HE3D_MEMBER_INLINE quat(float _w = 1, float _x = 0, float _y = 0, float _z = 0)
         : w(_w), x(_x), y(_y), z(_z) {}
 
-    // ---- Construct from Euler angles (radians) ----
-    // Pitch=X, Yaw=Y, Roll=Z.
-    // Uses sincosf to compute sin+cos in one call, halving trig work.
+    // Construct from Euler angles in radians. Pitch=X, Yaw=Y, Roll=Z.
+    // 从弧度制欧拉角构造。Pitch=X，Yaw=Y，Roll=Z。
     HE3D_MEMBER_INLINE static quat FromEuler(float3 euler) {
         float sy, cy, sp, cp, sr, cr;
-        sincosf(euler.y * 0.5f, &sy, &cy); // Yaw
-        sincosf(euler.x * 0.5f, &sp, &cp); // Pitch
-        sincosf(euler.z * 0.5f, &sr, &cr); // Roll
+        sincosf(euler.y * 0.5f, &sy, &cy); // Yaw / 偏航
+        sincosf(euler.x * 0.5f, &sp, &cp); // Pitch / 俯仰
+        sincosf(euler.z * 0.5f, &sr, &cr); // Roll / 滚转
         return {
             cy*cp*cr + sy*sp*sr,
             cy*sp*cr + sy*cp*sr,
@@ -494,7 +528,8 @@ struct quat {
         };
     }
 
-    // ---- Fast Euler construction (uses fast trig for non-critical paths) ----
+    // Fast Euler construction; kept for call sites that prefer the fast path.
+    // 快速欧拉角构造；用于明确选择快速路径的调用点。
     HE3D_MEMBER_INLINE static quat FromEulerFast(float3 euler) {
         float sy = sinf(euler.y * 0.5f), cy = cosf(euler.y * 0.5f);
         float sp = sinf(euler.x * 0.5f), cp = cosf(euler.x * 0.5f);
@@ -507,8 +542,8 @@ struct quat {
         };
     }
 
-    // ---- Normalize to prevent floating-point drift ----
-    // Standard normalize with sqrt.
+    // Normalize to limit floating-point drift.
+    // 归一化以限制浮点误差漂移。
     HE3D_MEMBER_INLINE quat normalize() const {
         float mag = w*w + x*x + y*y + z*z;
         if (HE3D_UNLIKELY(mag < 0.0000001f)) return {1,0,0,0};
@@ -516,7 +551,8 @@ struct quat {
         return {w*inv, x*inv, y*inv, z*inv};
     }
 
-    // Fast normalize using HE3D's reciprocal-square-root path.
+    // Fast normalize using the reciprocal-square-root path.
+    // 使用快速平方根倒数路径进行快速归一化。
     HE3D_MEMBER_INLINE quat normalizeFast() const {
         float mag = w*w + x*x + y*y + z*z;
         if (HE3D_UNLIKELY(mag < 0.0000001f)) return {1,0,0,0};
@@ -524,7 +560,8 @@ struct quat {
         return {w*inv, x*inv, y*inv, z*inv};
     }
 
-    // ---- Quaternion multiplication (rotation composition) ----
+    // Quaternion multiplication for rotation composition.
+    // 四元数乘法，用于组合旋转。
     HE3D_MEMBER_INLINE quat operator*(const quat& q) const {
         return {
             w*q.w - x*q.x - y*q.y - z*q.z,
@@ -534,9 +571,8 @@ struct quat {
         };
     }
 
-    // ---- Rotate a 3D vector by this quaternion ----
-    // Optimized: v' = v + 2w*(qv x v) + 2*(qv x (qv x v))
-    // Precomputes 2w to save a multiply on the critical path.
+    // Rotate a vector by this quaternion.
+    // 使用该四元数旋转向量。
     HE3D_MEMBER_INLINE float3 rotate(const float3& v) const {
         float3 qv     = {x, y, z};
         float  twoW   = 2.0f * w;
@@ -549,18 +585,19 @@ struct quat {
         };
     }
 
-    // ---- Inverse (conjugate for unit quaternions, used in camera) ----
+    // Inverse for unit quaternions is the conjugate.
+    // 单位四元数的逆等于共轭。
     HE3D_MEMBER_INLINE quat inverse() const { return {w, -x, -y, -z}; }
 };
 
 // ============================================================================
-// [13] float4x4 — 4x4 matrix (reserved for future use)
+// [13] float4x4: 4x4 matrix / 4x4 矩阵
 // ============================================================================
 struct float4x4 {
     float m[16];
 
     HE3D_MEMBER_INLINE float4x4() {
-        for (int i = 0; i < 16; i++) m[i] = 0.0f;
+        for (int32_t i = 0; i < 16; i++) m[i] = 0.0f;
         m[0] = m[5] = m[10] = m[15] = 1.0f;
     }
 };
