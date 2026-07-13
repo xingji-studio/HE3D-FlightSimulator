@@ -1,403 +1,568 @@
 /*
  * HE3D Engine for 3D - Flight Simulator
  * Portable HE3D example. C++11 classes. No standard library in XJ380 builds.
+ * HE3D 便携飞行模拟示例。XJ380 构建中不依赖 C++ 标准库。
  *
  * This file is intentionally written as readable sample code. It shows how a
  * small game can use HE3D without depending on a desktop-only framework.
+ *
+ * 本文件刻意写成易读的示例代码，用来展示一个小型游戏如何使用 HE3D，
+ * 同时不依赖只在桌面平台可用的框架。
  */
 #include "flight_sim.hpp"
 
-// ============================================================================
-// Input state (accessed by callback + main loop)
-// ============================================================================
-static bool keys[256];
-static volatile bool g_quit = false;
-static const char *WINDOW_TITLE = "HE3D Flight Simulator";
+static bool          g_keys[256];
+static volatile bool g_quit      = false;
+static const char   *windowTitle = "HE3D Flight Simulator";
 
 #ifdef __XJ380_OS__
 extern "C" void xapi_OutputSerial(char *str);
 #endif
 
-static void KeyHandler(int key, bool pressed, void *) {
-    if (key >= 'A' && key <= 'Z') {
-        key = key - 'A' + 'a';
-    }
-    if (key >= 0 && key < 256) {
-        keys[key] = pressed;
-    }
-    if (key == 27 && pressed) {
-        g_quit = true;
-    }
+// Smoothed input values for pitch, yaw, and roll.
+// 俯仰、偏航和滚转的平滑输入值。
+struct FlightControls {
+   float pitch;
+   float yaw;
+   float roll;
+
+   FlightControls() : pitch(0.0f), yaw(0.0f), roll(0.0f) {}
+};
+
+// One reusable terrain tile with a cached static mesh collider.
+// 一个带静态 mesh 碰撞缓存的可复用地形块。
+struct TerrainTile {
+   HE3D::GameObject         object;
+   HE3D::StaticMeshCollider collider;
+   int                      gridX;
+   int                      gridZ;
+   bool                     active;
+
+   TerrainTile() : object(), collider(), gridX(0), gridZ(0), active(false) {}
+};
+
+// Grid coordinate queued for terrain generation.
+// 等待生成的地形网格坐标。
+struct TerrainTileRequest {
+   int gridX;
+   int gridZ;
+};
+
+// HE3D sends keyboard events here after PollEvents() is called.
+// 调用 PollEvents() 后，HE3D 会把键盘事件发送到这里。
+static void KeyHandler(int key, bool pressed, void *)
+{
+   if (key >= 'A' && key <= 'Z') {
+      key = key - 'A' + 'a';
+   }
+   if (key >= 0 && key < 256) {
+      g_keys[key] = pressed;
+   }
+   if (key == 27 && pressed) {
+      g_quit = true;
+   }
 }
 
+// Append an unsigned integer to a fixed-size C string buffer.
+// 将无符号整数追加到固定长度 C 字符串缓冲区。
 static void AppendUnsigned(char *dst, int *pos, int maxLen, unsigned int value)
 {
-    char tmp[16];
-    int n = 0;
-    if (value == 0) {
-        tmp[n++] = '0';
-    } else {
-        while (value > 0 && n < (int)sizeof(tmp)) {
-            tmp[n++] = (char)('0' + (value % 10U));
-            value /= 10U;
-        }
-    }
-    while (n > 0 && *pos < maxLen - 1) {
-        dst[(*pos)++] = tmp[--n];
-    }
+   char tmp[16];
+   int  count = 0;
+   if (value == 0) {
+      tmp[count++] = '0';
+   } else {
+      while (value > 0 && count < (int)sizeof(tmp)) {
+         tmp[count++] = (char)('0' + (value % 10U));
+         value /= 10U;
+      }
+   }
+   while (count > 0 && *pos < maxLen - 1) {
+      dst[(*pos)++] = tmp[--count];
+   }
 }
 
+// Build the window title with the averaged FPS value.
+// 构造带平均 FPS 的窗口标题。
 static void BuildFpsTitle(char *dst, int maxLen, unsigned int fps)
 {
-    int pos = 0;
-    const char *prefix = WINDOW_TITLE;
-    while (*prefix && pos < maxLen - 1) {
-        dst[pos++] = *prefix++;
-    }
-    const char *mid = " - FPS ";
-    while (*mid && pos < maxLen - 1) {
-        dst[pos++] = *mid++;
-    }
-    AppendUnsigned(dst, &pos, maxLen, fps);
-    dst[pos] = 0;
+   int         pos    = 0;
+   const char *prefix = windowTitle;
+   while (*prefix && pos < maxLen - 1) {
+      dst[pos++] = *prefix++;
+   }
+   const char *mid = " - FPS ";
+   while (*mid && pos < maxLen - 1) {
+      dst[pos++] = *mid++;
+   }
+   AppendUnsigned(dst, &pos, maxLen, fps);
+   dst[pos] = 0;
 }
 
-static void ReportFps(HE3D::Window *win, unsigned int fps)
+// Report FPS through the platform title on desktop or serial output on XJ380.
+// 在桌面平台通过窗口标题报告 FPS，在 XJ380 上通过串口输出。
+static void ReportFps(HE3D::Window *window, unsigned int fps)
 {
 #ifdef __XJ380_OS__
-    (void)win;
-    char line[32];
-    int pos = 0;
-    const char *prefix = "HE3D FPS ";
-    while (*prefix && pos < (int)sizeof(line) - 1) {
-        line[pos++] = *prefix++;
-    }
-    AppendUnsigned(line, &pos, (int)sizeof(line), fps);
-    if (pos < (int)sizeof(line) - 1) {
-        line[pos++] = '\n';
-    }
-    line[pos] = 0;
-    xapi_OutputSerial(line);
+   (void)window;
+   char        line[32];
+   int         pos    = 0;
+   const char *prefix = "HE3D FPS ";
+   while (*prefix && pos < (int)sizeof(line) - 1) {
+      line[pos++] = *prefix++;
+   }
+   AppendUnsigned(line, &pos, (int)sizeof(line), fps);
+   if (pos < (int)sizeof(line) - 1) {
+      line[pos++] = '\n';
+   }
+   line[pos] = 0;
+   xapi_OutputSerial(line);
 #else
-    char title[64];
-    BuildFpsTitle(title, (int)sizeof(title), fps);
-    HE3D::SetWindowTitle(win, title);
+   char title[64];
+   BuildFpsTitle(title, (int)sizeof(title), fps);
+   HE3D::SetWindowTitle(window, title);
 #endif
 }
 
-// ============================================================================
-// Input curve (nonlinear flight controls)
-// ============================================================================
-static float InputCurve(float& cur, bool pos, bool neg, float dt, float acc, float rec) {
-    // Smooth key input into an analog-like control value. This keeps the sample
-    // readable while avoiding instant full-force pitch, yaw, or roll changes.
-    float tgt = 0.0f;
-    if (pos) tgt = 1.0f; else if (neg) tgt = -1.0f;
-    if (tgt != 0.0f) cur += tgt * acc * dt;
-    else {
-        if (cur > 0) cur = HE3D_MAX(0.0f, cur - rec * dt);
-        else if (cur < 0) cur = HE3D_MIN(0.0f, cur + rec * dt);
-    }
-    cur = HE3D_CLAMP(cur, -1.0f, 1.0f);
-    float s = (cur >= 0) ? 1.0f : -1.0f;
-    float a = HE3D_ABS(cur);
-    return s * a * a * a;
+// Ease a digital key pair into a smooth cubic control value.
+// 将一对数字按键平滑成三次曲线控制值。
+static float InputCurve(float &current, bool positive, bool negative, float deltaTime,
+                        float acceleration, float recovery)
+{
+   float target = 0.0f;
+   if (positive) {
+      target = 1.0f;
+   } else if (negative) {
+      target = -1.0f;
+   }
+
+   if (target != 0.0f) {
+      current += target * acceleration * deltaTime;
+   } else if (current > 0.0f) {
+      current = HE3D_MAX(0.0f, current - recovery * deltaTime);
+   } else if (current < 0.0f) {
+      current = HE3D_MIN(0.0f, current + recovery * deltaTime);
+   }
+
+   current      = HE3D_CLAMP(current, -1.0f, 1.0f);
+   float sign   = (current >= 0.0f) ? 1.0f : -1.0f;
+   float amount = HE3D_ABS(current);
+   return sign * amount * amount * amount;
 }
 
-static float NormAngle(float a) {
-    // Single fmod-style wrap instead of iterative while loops.
-    if (a > HE3D::HE3D_PI || a < -HE3D::HE3D_PI) {
-        a -= (int)(a * 0.159154943f) * HE3D::HE3D_TAU;  // 1/TAU ≈ 0.159154943
-        if (a >  HE3D::HE3D_PI) a -= HE3D::HE3D_TAU;
-        if (a < -HE3D::HE3D_PI) a += HE3D::HE3D_TAU;
-    }
-    return a;
+// Normalize an angle to the -PI..PI range.
+// 将角度归一化到 -PI 到 PI 范围。
+static float NormalizeAngle(float angle)
+{
+   if (angle > HE3D::HE3D_PI || angle < -HE3D::HE3D_PI) {
+      angle -= (int)(angle * 0.159154943f) * HE3D::HE3D_TAU;
+      if (angle > HE3D::HE3D_PI) {
+         angle -= HE3D::HE3D_TAU;
+      }
+      if (angle < -HE3D::HE3D_PI) {
+         angle += HE3D::HE3D_TAU;
+      }
+   }
+   return angle;
 }
 
+// Create a quaternion from an axis and a radians angle.
+// 根据旋转轴和弧度角创建四元数。
 static HE3D::quat AxisAngleQuat(HE3D::float3 axis, float angle)
 {
-    axis = axis.normalizeFast();
-    float s, c;
-    HE3D::sincosf(angle * 0.5f, &s, &c);
-    return {c, axis.x * s, axis.y * s, axis.z * s};
+   axis = axis.normalizeFast();
+   float sine, cosine;
+   HE3D::sincosf(angle * 0.5f, &sine, &cosine);
+   return {cosine, axis.x * sine, axis.y * sine, axis.z * sine};
 }
 
-static float TerrainHeightSample(float x, float z, void *)
+// Toggle FXAA on the key-down edge so holding F does not toggle repeatedly.
+// 在按键按下边沿切换 FXAA，避免长按 F 时反复切换。
+static void HandleToggleKeys(bool &fxaaKeyWasDown)
 {
-    return TerrainHeightAt(x, z);
+   bool fxaaKeyDown = g_keys['f'];
+   if (fxaaKeyDown && !fxaaKeyWasDown) {
+      HE3D::SetFxaaEnabled(!HE3D::IsFxaaEnabled());
+   }
+   fxaaKeyWasDown = fxaaKeyDown;
 }
 
-// ============================================================================
-// Main
-// ============================================================================
-int main(int argc, char** argv, char** envp) {
-    // ---- Window ----
-    const int W = 800, H = 600;
-    const int RW = W, RH = H;
-    HE3D::WindowDesc windowDesc;
-    windowDesc.width = W;
-    windowDesc.height = H;
-    windowDesc.title = WINDOW_TITLE;
-    windowDesc.flags = 0;
+// Update aircraft orientation from controls and write its forward velocity.
+// 根据控制输入更新飞机朝向，并写入向前飞行速度。
+static HE3D::float3 UpdateFlightControls(FlightControls &controls, HE3D::GameObject &plane,
+                                         HE3D::PhysicsBody &planeBody, float deltaTime)
+{
+   const float inputAcceleration = 4.5f;
+   const float inputRecovery     = 2.5f;
+   float       pitchControl      = InputCurve(controls.pitch, g_keys['w'], g_keys['s'], deltaTime,
+                                              inputAcceleration, inputRecovery);
+   float       yawControl        = InputCurve(controls.yaw, g_keys['e'], g_keys['q'], deltaTime,
+                                              inputAcceleration, inputRecovery);
+   float       rollControl       = InputCurve(controls.roll, g_keys['a'], g_keys['d'], deltaTime,
+                                              inputAcceleration, inputRecovery);
 
-    HE3D::Window *win = HE3D::CreateWindow(&windowDesc);
-    if (!win) {
-        return 1;
-    }
-    HE3D::SetKeyCallback(win, KeyHandler, nullptr);
-    HE3D::SetFrameRateLimit(0);
-    HE3D::SetFxaaEnabled(false);
+   HE3D::quat   pitchDelta = HE3D::quat::FromEuler({pitchControl * 1.35f * deltaTime, 0.0f, 0.0f});
+   HE3D::float3 right      = plane.orientation.rotate({1.0f, 0.0f, 0.0f});
+   HE3D::float3 localUp    = plane.orientation.rotate({0.0f, 1.0f, 0.0f});
+   HE3D::float3 worldUp    = {0.0f, 1.0f, 0.0f};
+   float        bankInfluence = HE3D_CLAMP(HE3D_ABS(right.y), 0.0f, 1.0f);
+   HE3D::float3 yawAxis =
+       (worldUp * (1.0f - bankInfluence) + localUp * bankInfluence).normalizeFast();
+   HE3D::quat yawDelta  = AxisAngleQuat(yawAxis, yawControl * 0.95f * deltaTime);
+   HE3D::quat rollDelta = HE3D::quat::FromEuler({0.0f, 0.0f, rollControl * 1.75f * deltaTime});
 
-    // ---- Renderer ----
-    HE3D::Renderer eng(win, RW, RH);
+   plane.orientation    = (yawDelta * plane.orientation * pitchDelta * rollDelta).normalizeFast();
+   HE3D::float3 forward = plane.Forward();
+   planeBody.SetVelocity(forward * 15.0f);
+   return forward;
+}
 
-    // ---- Scene ----
-    HE3D::Camera cam;
-    cam.fov = 90.0f;
-    cam.position = {0, 12, 5};
+// Return whether a terrain tile is still inside the active square.
+// 判断地形块是否仍位于活动区域内。
+static bool IsTileInRange(const TerrainTile &tile, int centerGridX, int centerGridZ, int tileRadius)
+{
+   return tile.gridX >= centerGridX - tileRadius && tile.gridX <= centerGridX + tileRadius &&
+          tile.gridZ >= centerGridZ - tileRadius && tile.gridZ <= centerGridZ + tileRadius;
+}
 
-    HE3D::GameObject plane;
-    // Prefer the external aircraft model. If the asset is missing, fall back to
-    // a tiny built-in mesh so the example still demonstrates rendering.
-    plane.mesh = HE3D::Mesh::LoadOBJ("biplane.obj");
-    if (!plane.mesh) {
-        plane.mesh = HE3D::Mesh::Create(FLIGHT_FALLBACK_AIRCRAFT_VERTICES,
-                                  FLIGHT_FALLBACK_AIRCRAFT_UVS,
-                                  FLIGHT_FALLBACK_AIRCRAFT_VERTEX_COUNT);
-    }
-    plane.position = {0, 13, 0};
-    HE3D::PhysicsBody planeBody(&plane);
-    planeBody.SetEnabled(true);
-    HE3D::CollisionBox planeBox(&plane);
-    if (!planeBox.FitMesh()) {
-        planeBox.halfExtents = {0.5f, 0.2f, 0.7f};
-    }
-    HE3D::Texture* pTex  = HE3D::Texture::LoadBMP("biplane.bmp");
-    bool hasTex    = (pTex && pTex->valid);
+// Return whether the requested grid coordinate already has an active tile.
+// 判断指定网格坐标是否已有活动地形块。
+static bool HasActiveTile(const TerrainTile *tiles, int tileCount, int gridX, int gridZ)
+{
+   for (int i = 0; i < tileCount; i++) {
+      if (tiles[i].active && tiles[i].gridX == gridX && tiles[i].gridZ == gridZ) {
+         return true;
+      }
+   }
+   return false;
+}
 
-    // ---- Terrain tiles ----
-    // The terrain is split into a small 3x3 grid around the plane. Tiles are
-    // recycled as the aircraft moves so memory use stays fixed.
-    const int RD  = 1;      // 3x3 tile radius.
-    const float GS = 12.0f;
-    const int GC   = 7;
-    const float TS = (GC - 1) * GS;
-    const int TN   = (RD * 2 + 1) * (RD * 2 + 1);
-    HE3D::HeightFieldCollider terrainCollider(TerrainHeightSample, nullptr, GC, GS);
+// Recycle out-of-range tiles and queue missing nearby terrain tiles.
+// 回收超出范围的地形块，并把附近缺失的地形块加入生成队列。
+static void QueueTerrainTiles(TerrainTile *tiles, int tileCount, int centerGridX, int centerGridZ,
+                              int tileRadius, TerrainTileRequest *pendingTiles, int &pendingCount,
+                              int &pendingCursor)
+{
+   pendingCount  = 0;
+   pendingCursor = 0;
 
-    struct Tile { HE3D::GameObject obj; int gx, gz; bool active; };
-    struct TileRequest { int gx, gz; };
-    Tile* tiles = new Tile[TN];
-    HE3D::HeightFieldCollider::Tile *terrainTiles = new HE3D::HeightFieldCollider::Tile[TN];
-    if (!tiles || !terrainTiles) {
-        delete[] terrainTiles;
-        delete[] tiles;
-        delete plane.mesh;
-        delete pTex;
-        HE3D::DestroyWindow(win);
-        return 1;
-    }
-    for (int i = 0; i < TN; i++) {
-        tiles[i].active = false;
-        tiles[i].obj.mesh = nullptr;
-        terrainTiles[i].active = false;
-    }
+   for (int i = 0; i < tileCount; i++) {
+      if (tiles[i].active && !IsTileInRange(tiles[i], centerGridX, centerGridZ, tileRadius)) {
+         tiles[i].active = false;
+      }
+   }
 
-    int centerX = 0, centerZ = 0;
-    bool dirty = true;
-    TileRequest pendingTiles[TN];
-    int pendingCount = 0;
-    int pendingCursor = 0;
+   for (int offsetX = -tileRadius; offsetX <= tileRadius; offsetX++) {
+      for (int offsetZ = -tileRadius; offsetZ <= tileRadius; offsetZ++) {
+         int gridX = centerGridX + offsetX;
+         int gridZ = centerGridZ + offsetZ;
+         if (!HasActiveTile(tiles, tileCount, gridX, gridZ) && pendingCount < tileCount) {
+            pendingTiles[pendingCount].gridX = gridX;
+            pendingTiles[pendingCount].gridZ = gridZ;
+            pendingCount++;
+         }
+      }
+   }
+}
 
-    // ---- Lighting ----
-    HE3D::DirectionalLight sun;
-    sun.direction = {1.0f, 1.0f, 0.5f};
-    sun.color     = {1.5f, 1.4f, 1.2f};
-    eng.SetMainLight(sun);
+// Generate or refresh at most one queued terrain tile.
+// 最多生成或刷新一个排队中的地形块。
+static void RefreshNextTerrainTile(TerrainTile *tiles, int tileCount,
+                                   TerrainTileRequest *pendingTiles, int &pendingCursor,
+                                   int pendingCount, int terrainGridCount, float terrainStep,
+                                   float tileSize)
+{
+   if (pendingCursor >= pendingCount) {
+      return;
+   }
 
-    // ---- Input ----
-    // These accumulators store smoothed pitch, yaw, and roll input.
-    float iP = 0, iY = 0, iR = 0;
-    const float ACC = 4.5f, REC = 2.5f;
+   int gridX = pendingTiles[pendingCursor].gridX;
+   int gridZ = pendingTiles[pendingCursor].gridZ;
+   pendingCursor++;
 
-    // ---- Camera ----
-    float  camYaw = 0.0f;
-    HE3D::float3 camOff = {0.0f, 0.7f, -1.8f};
+   if (HasActiveTile(tiles, tileCount, gridX, gridZ)) {
+      return;
+   }
 
-    // ---- Timing ----
-    double lt = HE3D::TimeSeconds();
-    double fpsStart = lt;
-    unsigned int fpsFrames = 0;
-    bool fxaaKeyWasDown = false;
+   for (int i = 0; i < tileCount; i++) {
+      if (tiles[i].active) {
+         continue;
+      }
 
-    // ---- Main loop ----
-    while (!g_quit && !HE3D::WindowShouldClose(win)) {
-        double frameStart = HE3D::TimeSeconds();
-        HE3D::PollEvents(win);
+      tiles[i].gridX = gridX;
+      tiles[i].gridZ = gridZ;
+      float worldX   = tiles[i].gridX * tileSize;
+      float worldZ   = tiles[i].gridZ * tileSize;
+      if (!tiles[i].object.mesh) {
+         tiles[i].object.mesh = CreatePlane(terrainGridCount, terrainStep, worldX, worldZ);
+      } else if (!UpdatePlaneMesh(tiles[i].object.mesh, terrainGridCount, terrainStep, worldX,
+                                  worldZ)) {
+         delete tiles[i].object.mesh;
+         tiles[i].object.mesh = CreatePlane(terrainGridCount, terrainStep, worldX, worldZ);
+      }
+      tiles[i].object.position = {worldX, 0.0f, worldZ};
+      tiles[i].active          = (tiles[i].object.mesh != nullptr) &&
+                                 tiles[i].collider.BuildFromMesh(tiles[i].object.mesh);
+      break;
+   }
+}
 
-        double now = frameStart;
-        float dt = (float)(now - lt);
-        lt = now;
-        if (dt > 0.1f) dt = 0.1f;
+// Keep terrain tiles centered around the aircraft and refresh one tile per frame.
+// 让地形块围绕飞机所在区域，并且每帧只刷新一个地形块。
+static void UpdateTerrainTiles(TerrainTile *tiles, int tileCount, TerrainTileRequest *pendingTiles,
+                               int &pendingCount, int &pendingCursor, int &centerGridX,
+                               int &centerGridZ, bool &terrainDirty,
+                               const HE3D::float3 &planePosition, int tileRadius,
+                               int terrainGridCount, float terrainStep, float tileSize)
+{
+   int planeGridX = (int)HE3D::floorf(planePosition.x / tileSize);
+   int planeGridZ = (int)HE3D::floorf(planePosition.z / tileSize);
+   if (planeGridX != centerGridX || planeGridZ != centerGridZ || terrainDirty) {
+      centerGridX  = planeGridX;
+      centerGridZ  = planeGridZ;
+      terrainDirty = false;
+      QueueTerrainTiles(tiles, tileCount, centerGridX, centerGridZ, tileRadius, pendingTiles,
+                        pendingCount, pendingCursor);
+   }
 
-        bool fxaaKeyDown = keys['F'] || keys['f'];
-        if (fxaaKeyDown && !fxaaKeyWasDown) {
-            HE3D::SetFxaaEnabled(!HE3D::IsFxaaEnabled());
-        }
-        fxaaKeyWasDown = fxaaKeyDown;
+   RefreshNextTerrainTile(tiles, tileCount, pendingTiles, pendingCursor, pendingCount,
+                          terrainGridCount, terrainStep, tileSize);
+}
 
-        // Input mapping:
-        // W/S pitch the nose, Q/E yaw the aircraft, and A/D roll the wings.
-        float cP = InputCurve(iP, keys['W']||keys['w'], keys['S']||keys['s'], dt, ACC, REC);
-        float cY = InputCurve(iY, keys['E']||keys['e'], keys['Q']||keys['q'], dt, ACC, REC);
-        float cR = InputCurve(iR, keys['A']||keys['a'], keys['D']||keys['d'], dt, ACC, REC);
+// Add only the closest terrain colliders to keep the mesh collider cost bounded.
+// 只加入最近的地形碰撞体，避免 mesh 碰撞开销无限增长。
+static void AddNearbyTerrainColliders(HE3D::PhysicsScene &worldScene, TerrainTile *tiles,
+                                      int tileCount, const HE3D::float3 &planePosition)
+{
+   const int maxColliderCount = 4;
+   int       bestIndices[maxColliderCount];
+   float     bestDistances[maxColliderCount];
+   for (int i = 0; i < maxColliderCount; i++) {
+      bestIndices[i]   = -1;
+      bestDistances[i] = 340282346638528859811704183484516925440.0f;
+   }
 
-        // Flight physics
-        // Yaw uses world-up when the wings are level, then blends toward the
-        // aircraft's local up vector as bank angle increases.
-        HE3D::quat dP = HE3D::quat::FromEuler({cP * 1.35f * dt, 0, 0});
-        HE3D::float3 right = plane.orientation.rotate({1, 0, 0});
-        HE3D::float3 localUp = plane.orientation.rotate({0, 1, 0});
-        HE3D::float3 worldUp = {0, 1, 0};
-        float bankInfluence = HE3D_CLAMP(HE3D_ABS(right.y), 0.0f, 1.0f);
-        HE3D::float3 yawAxis = (worldUp * (1.0f - bankInfluence) + localUp * bankInfluence).normalizeFast();
-        HE3D::quat dY = AxisAngleQuat(yawAxis, cY * 0.95f * dt);
-        HE3D::quat dR = HE3D::quat::FromEuler({0, 0, cR * 1.75f * dt});
-        plane.orientation = (dY * plane.orientation * dP * dR).normalizeFast();
-        HE3D::float3 fwd = plane.Forward();
-        planeBody.SetVelocity(fwd * 15.0f);
-        planeBody.Step(dt);
-        float sweep = 0.35f + planeBody.velocity.length() * 0.02f;
-        planeBody.ResolveHeightField(planeBox, terrainCollider, terrainTiles, TN, sweep);
+   for (int i = 0; i < tileCount; i++) {
+      if (!tiles[i].active || !tiles[i].collider.IsValid()) {
+         continue;
+      }
 
-        // Camera
-        // Follow the aircraft from behind while smoothing the yaw so quick
-        // maneuvers remain readable.
-        HE3D::float3 hf = {fwd.x, 0, fwd.z};
-        float hsq = hf.x*hf.x + hf.z*hf.z;
-        if (hsq > 0.001f) {
-            float tYaw = HE3D::atan2f(hf.x, hf.z);
-            camYaw += NormAngle(tYaw - camYaw) * HE3D_MIN(5.0f * dt, 1.0f);
-        }
-        cam.orientation = HE3D::quat::FromEuler({0.15f, camYaw, 0});
-        HE3D::quat camYQ = HE3D::quat::FromEuler({0, camYaw, 0});
-        HE3D::float3 tgtPos = plane.position + camYQ.rotate(camOff);
-        HE3D::float3 diff = tgtPos - cam.position;
-        if (diff.lengthSq() > 100.0f) cam.position = tgtPos;
-        else cam.position = cam.position + diff * HE3D_MIN(8.0f * dt, 1.0f);
+      HE3D::float3 delta      = tiles[i].object.position - planePosition;
+      float        distanceSq = delta.x * delta.x + delta.z * delta.z;
+      for (int slot = 0; slot < maxColliderCount; slot++) {
+         if (distanceSq >= bestDistances[slot]) {
+            continue;
+         }
+         for (int move = maxColliderCount - 1; move > slot; move--) {
+            bestDistances[move] = bestDistances[move - 1];
+            bestIndices[move]   = bestIndices[move - 1];
+         }
+         bestDistances[slot] = distanceSq;
+         bestIndices[slot]   = i;
+         break;
+      }
+   }
 
-        // Terrain management
-        // Keep only the tiles near the current aircraft grid coordinate.
-        int pGX = (int)HE3D::floorf(plane.position.x / TS);
-        int pGZ = (int)HE3D::floorf(plane.position.z / TS);
-        if (pGX != centerX || pGZ != centerZ || dirty) {
-            centerX = pGX; centerZ = pGZ; dirty = false;
-            pendingCount = 0;
-            pendingCursor = 0;
+   for (int i = 0; i < maxColliderCount; i++) {
+      if (bestIndices[i] >= 0) {
+         worldScene.AddStatic(&tiles[bestIndices[i]].object, &tiles[bestIndices[i]].collider);
+      }
+   }
+}
 
-            // Recycle out-of-range tiles.
-            for (int i = 0; i < TN; i++) {
-                if (!tiles[i].active) continue;
-                bool found = false;
-                for (int dx = -RD; dx <= RD && !found; dx++)
-                    for (int dz = -RD; dz <= RD; dz++)
-                        if (tiles[i].gx == centerX + dx && tiles[i].gz == centerZ + dz)
-                            { found = true; break; }
-                if (!found) { tiles[i].active = false; terrainTiles[i].active = false; }
-            }
+// Rebuild the small per-frame physics scene for the aircraft and nearby terrain.
+// 为飞机和附近地形重建小型逐帧物理场景。
+static void BuildPhysicsScene(HE3D::PhysicsScene &worldScene, HE3D::PhysicsBody &planeBody,
+                              HE3D::BoxCollider &planeCollider, HE3D::GameObject &plane,
+                              TerrainTile *tiles, int tileCount, const HE3D::float3 &planePosition)
+{
+   worldScene.Clear();
+   worldScene.AddBody(&plane, &planeBody, &planeCollider);
+   AddNearbyTerrainColliders(worldScene, tiles, tileCount, planePosition);
+}
 
-            for (int dx = -RD; dx <= RD; dx++) {
-                for (int dz = -RD; dz <= RD; dz++) {
-                    int gx = centerX + dx;
-                    int gz = centerZ + dz;
-                    bool found = false;
-                    for (int i = 0; i < TN; i++) {
-                        if (tiles[i].active && tiles[i].gx == gx && tiles[i].gz == gz) {
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found && pendingCount < TN) {
-                        pendingTiles[pendingCount++] = {gx, gz};
-                    }
-                }
-            }
-        }
+// Follow the aircraft from behind with smoothed yaw.
+// 从飞机后方跟随，并平滑相机偏航。
+static void UpdateCamera(HE3D::Camera &camera, float &cameraYaw, const HE3D::GameObject &plane,
+                         HE3D::float3 forward, HE3D::float3 cameraOffset, float deltaTime)
+{
+   HE3D::float3 horizontalForward = {forward.x, 0.0f, forward.z};
+   if (horizontalForward.lengthSq() > 0.001f) {
+      float targetYaw = HE3D::atan2f(horizontalForward.x, horizontalForward.z);
+      cameraYaw += NormalizeAngle(targetYaw - cameraYaw) * HE3D_MIN(5.0f * deltaTime, 1.0f);
+   }
 
-        // Generate or refresh at most one terrain tile per frame. Crossing a
-        // tile boundary used to update several meshes in one frame, which made
-        // XJ380 stall visibly and could pull the measured FPS down for a whole
-        // reporting interval.
-        if (pendingCursor < pendingCount) {
-            int gx = pendingTiles[pendingCursor].gx;
-            int gz = pendingTiles[pendingCursor].gz;
-            pendingCursor++;
+   camera.orientation             = HE3D::quat::FromEuler({0.15f, cameraYaw, 0.0f});
+   HE3D::quat   cameraYawRotation = HE3D::quat::FromEuler({0.0f, cameraYaw, 0.0f});
+   HE3D::float3 targetPosition    = plane.position + cameraYawRotation.rotate(cameraOffset);
+   HE3D::float3 delta             = targetPosition - camera.position;
+   if (delta.lengthSq() > 100.0f) {
+      camera.position = targetPosition;
+   } else {
+      camera.position = camera.position + delta * HE3D_MIN(8.0f * deltaTime, 1.0f);
+   }
+}
 
-            bool alreadyActive = false;
-            for (int i = 0; i < TN; i++) {
-                if (tiles[i].active && tiles[i].gx == gx && tiles[i].gz == gz) {
-                    alreadyActive = true;
-                    break;
-                }
-            }
+// Draw active terrain tiles and then draw the aircraft.
+// 绘制活动地形块，然后绘制飞机。
+static void DrawScene(HE3D::Renderer &renderer, TerrainTile *tiles, int tileCount,
+                      const HE3D::GameObject &plane, const HE3D::Texture *planeTexture,
+                      bool hasPlaneTexture, const HE3D::Camera &camera, float tileSize)
+{
+   renderer.Clear(HE3D::color3(0.45f, 0.75f, 1.0f));
 
-            if (!alreadyActive) {
-                for (int i = 0; i < TN; i++) {
-                    if (!tiles[i].active) {
-                        tiles[i].gx = gx; tiles[i].gz = gz;
-                        float wx = tiles[i].gx * TS, wz = tiles[i].gz * TS;
-                        if (!tiles[i].obj.mesh) {
-                            tiles[i].obj.mesh = CreatePlane(GC, GS, wx, wz);
-                        } else if (!UpdatePlaneMesh(tiles[i].obj.mesh, GC, GS, wx, wz)) {
-                            delete tiles[i].obj.mesh;
-                            tiles[i].obj.mesh = CreatePlane(GC, GS, wx, wz);
-                        }
-                        tiles[i].obj.position = {wx, 0, wz};
-                        tiles[i].active = (tiles[i].obj.mesh != nullptr);
-                        if (tiles[i].active) {
-                            terrainCollider.BuildTile(terrainTiles[i], wx, wz);
-                        } else {
-                            terrainTiles[i].active = false;
-                        }
-                        break;
-                    }
-                }
-            }
-        }
+   HE3D::color3 terrainColor = {0.3f, 0.7f, 0.3f};
+   float        drawRadiusSq = (tileSize * 1.45f) * (tileSize * 1.45f);
+   for (int i = 0; i < tileCount; i++) {
+      if (!tiles[i].active || !tiles[i].object.mesh) {
+         continue;
+      }
+      HE3D::float3 tileDelta = tiles[i].object.position - camera.position;
+      if (tileDelta.x * tileDelta.x + tileDelta.z * tileDelta.z > drawRadiusSq) {
+         continue;
+      }
+      renderer.DrawGameObject(tiles[i].object, camera, terrainColor);
+   }
 
-        // Render
-        // Draw terrain first, then the plane, and finally present the platform
-        // framebuffer through XAPI or SDL3.
-        eng.Clear(HE3D::color3(0.45f, 0.75f, 1.0f));
-        HE3D::color3 tc = {0.3f, 0.7f, 0.3f};
-        float drawRadiusSq = (TS * 1.45f) * (TS * 1.45f);
-        for (int i = 0; i < TN; i++)
-            if (tiles[i].active && tiles[i].obj.mesh) {
-                HE3D::float3 td = tiles[i].obj.position - cam.position;
-                if (td.x * td.x + td.z * td.z > drawRadiusSq) continue;
-                eng.DrawGameObject(tiles[i].obj, cam, tc);
-            }
-        if (hasTex) eng.DrawGameObject(plane, cam, *pTex);
-        else       eng.DrawGameObject(plane, cam, HE3D::color3(0.8f, 0.2f, 0.2f));
-        eng.Present();
+   if (hasPlaneTexture) {
+      renderer.DrawGameObject(plane, camera, *planeTexture);
+   } else {
+      renderer.DrawGameObject(plane, camera, HE3D::color3(0.8f, 0.2f, 0.2f));
+   }
+   renderer.Present();
+}
 
-        fpsFrames++;
-        double fpsElapsed = now - fpsStart;
-        if (fpsElapsed >= 1.0) {
-            unsigned int fps = (unsigned int)((double)fpsFrames / fpsElapsed + 0.5);
-            ReportFps(win, fps);
-            fpsStart = now;
-            fpsFrames = 0;
-        }
-        HE3D::PaceFrame(frameStart);
-    }
+// Run the flight simulator example.
+// 运行飞行模拟示例。
+int main(int argc, char **argv, char **envp)
+{
+   (void)argc;
+   (void)argv;
+   (void)envp;
 
-    // Cleanup
-    delete plane.mesh;
-    delete pTex;
-    for (int i = 0; i < TN; i++) delete tiles[i].obj.mesh;
-    delete[] terrainTiles;
-    delete[] tiles;
-    HE3D::DestroyWindow(win);
-    return 0;
+   const int windowWidth  = 800;
+   const int windowHeight = 600;
+   const int renderWidth  = windowWidth;
+   const int renderHeight = windowHeight;
+
+   HE3D::WindowDesc windowDesc;
+   windowDesc.width  = windowWidth;
+   windowDesc.height = windowHeight;
+   windowDesc.title  = windowTitle;
+   windowDesc.flags  = 0;
+
+   HE3D::Window *window = HE3D::CreateWindow(&windowDesc);
+   if (!window) {
+      return 1;
+   }
+   HE3D::SetKeyCallback(window, KeyHandler, nullptr);
+   HE3D::SetFrameRateLimit(0);
+   HE3D::SetFxaaEnabled(false);
+   HE3D::SetTaaEnabled(false);
+
+   HE3D::Renderer renderer(window, renderWidth, renderHeight);
+
+   HE3D::Camera camera;
+   camera.fov      = 90.0f;
+   camera.position = {0.0f, 12.0f, 5.0f};
+
+   HE3D::GameObject plane;
+   plane.mesh = HE3D::Mesh::LoadOBJ("biplane.obj");
+   if (!plane.mesh) {
+      plane.mesh = HE3D::Mesh::Create(flightFallbackAircraftVertices, flightFallbackAircraftUvs,
+                                      flightFallbackAircraftVertexCount);
+   }
+   if (!plane.mesh) {
+      HE3D::DestroyWindow(window);
+      return 1;
+   }
+   plane.position = {0.0f, 13.0f, 0.0f};
+
+   HE3D::Texture *planeTexture    = HE3D::Texture::LoadBMP("biplane.bmp");
+   bool           hasPlaneTexture = (planeTexture && planeTexture->valid);
+
+   HE3D::PhysicsBody planeBody(&plane);
+   HE3D::BoxCollider planeCollider(1.0f, 0.45f, 1.4f);
+   planeBody.SetEnabled(true);
+   planeBody.SetMass(1.0f);
+   planeBody.SetInertia(1.0f);
+   planeBody.gravity     = {0.0f, -100.0f, 0.0f};
+   planeBody.restitution = 0.1f;
+   planeBody.friction    = 0.5f;
+   planeBody.damping     = 0.1f;
+
+   const int   tileRadius       = 1;
+   const float terrainStep      = 12.0f;
+   const int   terrainGridCount = 7;
+   const float tileSize         = (terrainGridCount - 1) * terrainStep;
+   const int   tileCount        = (tileRadius * 2 + 1) * (tileRadius * 2 + 1);
+
+   TerrainTile        tiles[tileCount];
+   TerrainTileRequest pendingTiles[tileCount];
+   int                terrainCenterX = 0;
+   int                terrainCenterZ = 0;
+   bool               terrainDirty   = true;
+   int                pendingCount   = 0;
+   int                pendingCursor  = 0;
+
+   HE3D::PhysicsScene worldScene(tileCount + 1);
+   worldScene.drag = 0.02f;
+
+   HE3D::DirectionalLight sun;
+   sun.direction = {1.0f, 1.0f, 0.5f};
+   sun.color     = {1.5f, 1.4f, 1.2f};
+   renderer.SetMainLight(sun);
+
+   FlightControls controls;
+   float          cameraYaw    = 0.0f;
+   HE3D::float3   cameraOffset = {0.0f, 0.7f, -1.8f};
+
+   double       lastTime       = HE3D::TimeSeconds();
+   double       fpsStart       = lastTime;
+   unsigned int fpsFrames      = 0;
+   bool         fxaaKeyWasDown = false;
+
+   while (!g_quit && !HE3D::WindowShouldClose(window)) {
+      double frameStart = HE3D::TimeSeconds();
+      HE3D::PollEvents(window);
+
+      double now       = frameStart;
+      float  deltaTime = (float)(now - lastTime);
+      lastTime         = now;
+      if (deltaTime > 0.1f) {
+         deltaTime = 0.1f;
+      }
+
+      HandleToggleKeys(fxaaKeyWasDown);
+      HE3D::float3 forward = UpdateFlightControls(controls, plane, planeBody, deltaTime);
+
+      UpdateTerrainTiles(tiles, tileCount, pendingTiles, pendingCount, pendingCursor,
+                         terrainCenterX, terrainCenterZ, terrainDirty, plane.position, tileRadius,
+                         terrainGridCount, terrainStep, tileSize);
+
+      BuildPhysicsScene(worldScene, planeBody, planeCollider, plane, tiles, tileCount,
+                        plane.position);
+      worldScene.Step(deltaTime, 1);
+
+      UpdateCamera(camera, cameraYaw, plane, forward, cameraOffset, deltaTime);
+      DrawScene(renderer, tiles, tileCount, plane, planeTexture, hasPlaneTexture, camera, tileSize);
+
+      fpsFrames++;
+      double fpsElapsed = now - fpsStart;
+      if (fpsElapsed >= 1.0) {
+         unsigned int fps = (unsigned int)((double)fpsFrames / fpsElapsed + 0.5);
+         ReportFps(window, fps);
+         fpsStart  = now;
+         fpsFrames = 0;
+      }
+      HE3D::PaceFrame(frameStart);
+   }
+
+   delete plane.mesh;
+   delete planeTexture;
+   for (int i = 0; i < tileCount; i++) {
+      delete tiles[i].object.mesh;
+   }
+   HE3D::DestroyWindow(window);
+   return 0;
 }

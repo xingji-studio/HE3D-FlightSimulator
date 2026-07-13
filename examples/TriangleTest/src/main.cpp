@@ -14,16 +14,15 @@ static bool g_quit = false;
 
 // HE3D sends keyboard events here after PollEvents() is called.
 // 调用 PollEvents() 后，HE3D 会把键盘事件发送到这里。
-static void OnKey(HE3D::int32_t key, bool pressed, void *)
-{
-    if (key == 27 && pressed)
-    {
+static void OnKey(HE3D::int32_t key, bool pressed, void *) {
+    if (key == 27 && pressed) {
         g_quit = true;
     }
 }
 
-int main()
-{
+// Run the minimal HE3D triangle example.
+// 运行最小 HE3D 三角形示例。
+int main() {
     // WindowDesc describes the window we want.
     // WindowDesc 描述我们要创建的窗口。
     HE3D::WindowDesc desc;
@@ -35,8 +34,7 @@ int main()
     // CreateWindow creates the window used by Renderer and input.
     // CreateWindow 创建 Renderer 和输入系统要使用的窗口。
     HE3D::Window *window = HE3D::CreateWindow(&desc);
-    if (!window)
-    {
+    if (!window) {
         return 1;
     }
 
@@ -75,8 +73,7 @@ int main()
 
     // If mesh allocation failed, destroy the window before returning.
     // 如果 mesh 分配失败，返回前要先销毁窗口。
-    if (!triangle.mesh)
-    {
+    if (!triangle.mesh) {
         HE3D::DestroyWindow(window);
         return 1;
     }
@@ -90,8 +87,7 @@ int main()
 
     // Main loop: handle input, update state, draw one frame, then pace the frame.
     // 主循环：处理输入，更新状态，绘制一帧，然后按帧率限制等待。
-    while (!g_quit && !HE3D::WindowShouldClose(window))
-    {
+    while (!g_quit && !HE3D::WindowShouldClose(window)) {
         // frameStart is passed to PaceFrame() so frame limiting measures the whole frame.
         // frameStart 会传给 PaceFrame()，这样限帧统计的是整帧耗时。
         double frameStart = HE3D::TimeSeconds();

@@ -1,41 +1,43 @@
+/*
+ * HE3D AirplaneTest - OBJ loading and anti-aliasing controls.
+ * HE3D AirplaneTest：OBJ 加载和抗锯齿控制示例。
+ *
+ * This example loads a model, draws it every frame, and shows how to switch
+ * TAA, MSAA, and SSAA from keyboard input.
+ *
+ * 本示例加载一个模型并逐帧绘制，同时展示如何通过键盘切换 TAA、MSAA
+ * 和 SSAA。
+ */
 #include "he3d.hpp"
 
 static bool g_quit = false;
-static const char *WINDOW_TITLE = "HE3D AirplaneTest";
+static const char *windowTitle = "HE3D AirplaneTest";
 static bool g_taaKeyDown = false;
 static bool g_msaaKeyDown = false;
 static bool g_ssaaResizeRequested = false;
 
 // HE3D sends keyboard events here after PollEvents() is called.
 // 调用 PollEvents() 后，HE3D 会把键盘事件发送到这里。
-static void OnKey(HE3D::int32_t key, bool pressed, void *)
-{
-    if (key >= 'A' && key <= 'Z')
-    {
+static void OnKey(HE3D::int32_t key, bool pressed, void *) {
+    if (key >= 'A' && key <= 'Z') {
         key = key - 'A' + 'a';
     }
-    if (key == 27 && pressed)
-    {
+    if (key == 27 && pressed) {
         g_quit = true;
     }
-    if (key == 't')
-    {
-        if (pressed && !g_taaKeyDown)
-        {
+    if (key == 't') {
+        if (pressed && !g_taaKeyDown) {
             HE3D::SetTaaEnabled(!HE3D::IsTaaEnabled());
         }
         g_taaKeyDown = pressed;
     }
-    if (key == 'm')
-    {
-        if (pressed && !g_msaaKeyDown)
-        {
+    if (key == 'm') {
+        if (pressed && !g_msaaKeyDown) {
             HE3D::SetMsaaEnabled(!HE3D::IsMsaaEnabled());
         }
         g_msaaKeyDown = pressed;
     }
-    if (pressed && key >= '1' && key <= '4')
-    {
+    if (pressed && key >= '1' && key <= '4') {
         HE3D::SetSsaaScale((HE3D::uint32_t)(key - '0'));
         g_ssaaResizeRequested = true;
     }
@@ -43,8 +45,8 @@ static void OnKey(HE3D::int32_t key, bool pressed, void *)
 
 // Append an unsigned integer to a fixed-size C string buffer.
 // 将无符号整数追加到固定长度 C 字符串缓冲区。
-static void AppendUnsigned(char *dst, HE3D::int32_t *pos, HE3D::int32_t maxLen, HE3D::uint32_t value)
-{
+static void AppendUnsigned(char *dst, HE3D::int32_t *pos,
+                           HE3D::int32_t maxLen, HE3D::uint32_t value) {
     char tmp[16];
     int n = 0;
     if (value == 0) {
@@ -62,10 +64,9 @@ static void AppendUnsigned(char *dst, HE3D::int32_t *pos, HE3D::int32_t maxLen, 
 
 // Build the window title with the averaged FPS value.
 // 构造带平均 FPS 的窗口标题。
-static void BuildFpsTitle(char *dst, HE3D::int32_t maxLen, HE3D::uint32_t fps)
-{
+static void BuildFpsTitle(char *dst, HE3D::int32_t maxLen, HE3D::uint32_t fps) {
     int pos = 0;
-    const char *prefix = WINDOW_TITLE;
+    const char *prefix = windowTitle;
     while (*prefix && pos < maxLen - 1) {
         dst[pos++] = *prefix++;
     }
@@ -93,28 +94,29 @@ static void BuildFpsTitle(char *dst, HE3D::int32_t maxLen, HE3D::uint32_t fps)
     dst[pos] = 0;
 }
 
-static void UpdateFpsTitle(HE3D::Window *window, HE3D::uint32_t fps)
-{
+// Update the platform window title with FPS and anti-aliasing state.
+// 用 FPS 和抗锯齿状态更新平台窗口标题。
+static void UpdateFpsTitle(HE3D::Window *window, HE3D::uint32_t fps) {
     char title[96];
     BuildFpsTitle(title, (int)sizeof(title), fps);
     HE3D::SetWindowTitle(window, title);
 }
 
-int main()
-{
+// Run the OBJ loading and anti-aliasing example.
+// 运行 OBJ 加载和抗锯齿示例。
+int main() {
     // WindowDesc describes the window we want.
     // WindowDesc 描述我们要创建的窗口。
     HE3D::WindowDesc desc;
     desc.width = 640;
     desc.height = 360;
-    desc.title = WINDOW_TITLE;
+    desc.title = windowTitle;
     desc.flags = 0;
 
     // CreateWindow creates the window used by Renderer and input.
     // CreateWindow 创建 Renderer 和输入系统要使用的窗口。
     HE3D::Window *window = HE3D::CreateWindow(&desc);
-    if (!window)
-    {
+    if (!window) {
         return 1;
     }
 
@@ -153,8 +155,7 @@ int main()
     // GameObject 把 mesh、位置和旋转组合成一个物体。
     HE3D::GameObject model;
     model.mesh = HE3D::Mesh::LoadOBJ("model.obj");
-    if (!model.mesh)
-    {
+    if (!model.mesh) {
         HE3D::DestroyWindow(window);
         return 1;
     }
@@ -171,8 +172,7 @@ int main()
 
     // Main loop: handle input, update state, draw one frame, then pace the frame.
     // 主循环：处理输入，更新状态，绘制一帧，然后按帧率限制等待。
-    while (!g_quit && !HE3D::WindowShouldClose(window))
-    {
+    while (!g_quit && !HE3D::WindowShouldClose(window)) {
         // frameStart is passed to PaceFrame() so frame limiting measures the whole frame.
         // frameStart 会传给 PaceFrame()，这样限帧统计的是整帧耗时。
         double frameStart = HE3D::TimeSeconds();
@@ -180,8 +180,7 @@ int main()
         // PollEvents must be called every frame; otherwise keyboard and close events will not update.
         // 每帧必须调用 PollEvents；否则键盘和关闭窗口事件不会更新。
         HE3D::PollEvents(window);
-        if (g_ssaaResizeRequested)
-        {
+        if (g_ssaaResizeRequested) {
             renderer.Resize(desc.width, desc.height);
             g_ssaaResizeRequested = false;
         }
@@ -194,16 +193,14 @@ int main()
         fpsFrames++;
 
         double fpsElapsed = now - fpsStart;
-        if (fpsElapsed >= 1.0)
-        {
+        if (fpsElapsed >= 1.0) {
             HE3D::uint32_t fps = (HE3D::uint32_t)((double)fpsFrames / fpsElapsed + 0.5);
             UpdateFpsTitle(window, fps);
             fpsStart = now;
             fpsFrames = 0;
         }
 
-        if (deltaTime > 0.1f)
-        {
+        if (deltaTime > 0.1f) {
             deltaTime = 0.1f;
         }
 

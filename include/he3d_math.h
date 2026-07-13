@@ -28,16 +28,16 @@
 
 #define HE3D_ALWAYS_INLINE static inline __attribute__((always_inline))
 #define HE3D_MEMBER_INLINE inline __attribute__((always_inline))
-#define HE3D_LIKELY(x)   __builtin_expect(!!(x), 1)
+#define HE3D_LIKELY(x) __builtin_expect(!!(x), 1)
 #define HE3D_UNLIKELY(x) __builtin_expect(!!(x), 0)
 
 namespace HE3D {
 
-typedef __INT8_TYPE__   int8_t;
-typedef __INT16_TYPE__  int16_t;
-typedef __INT32_TYPE__  int32_t;
-typedef __INT64_TYPE__  int64_t;
-typedef __UINT8_TYPE__  uint8_t;
+typedef __INT8_TYPE__ int8_t;
+typedef __INT16_TYPE__ int16_t;
+typedef __INT32_TYPE__ int32_t;
+typedef __INT64_TYPE__ int64_t;
+typedef __UINT8_TYPE__ uint8_t;
 typedef __UINT16_TYPE__ uint16_t;
 typedef __UINT32_TYPE__ uint32_t;
 typedef __UINT64_TYPE__ uint64_t;
@@ -86,12 +86,16 @@ HE3D_ALWAYS_INLINE float fracf(float x) {
 // Precise software sqrt: exponent-based seed plus five Newton iterations.
 // 高精度软件 sqrt：使用指数位生成初值，再执行五次 Newton 迭代。
 HE3D_ALWAYS_INLINE float sqrtf_precise(float x) {
-    if (HE3D_UNLIKELY(x <= 0.0f)) return 0.0f;
+    if (HE3D_UNLIKELY(x <= 0.0f))
+        return 0.0f;
     // Initial guess: halve the exponent and keep the mantissa.
     // 初值：指数减半，保留尾数。
-    union { float f; int32_t i; } u;
+    union {
+        float f;
+        int32_t i;
+    } u;
     u.f = x;
-    u.i = (u.i >> 1) + 0x1FC00000;  // exponent-based sqrt seed / 基于指数位的 sqrt 初值
+    u.i = (u.i >> 1) + 0x1FC00000; // exponent-based sqrt seed / 基于指数位的 sqrt 初值
     float r = u.f;
     // Five Newton iterations: r = (r + x/r) * 0.5.
     // 五次 Newton 迭代：r = (r + x/r) * 0.5。
@@ -110,9 +114,13 @@ HE3D_ALWAYS_INLINE float sqrtf_precise(float x) {
 // 位级初值加两次 Newton 迭代，用于 normalizeFast()。
 
 HE3D_ALWAYS_INLINE float rsqrtf(float x) {
-    if (HE3D_UNLIKELY(x <= 0.0f)) return 0.0f;
+    if (HE3D_UNLIKELY(x <= 0.0f))
+        return 0.0f;
     float x2 = x * 0.5f;
-    union { float f; uint32_t i; } u;
+    union {
+        float f;
+        uint32_t i;
+    } u;
     u.f = x;
     u.i = 0x5f3759dfu - (u.i >> 1);
     float y = u.f;
@@ -122,7 +130,8 @@ HE3D_ALWAYS_INLINE float rsqrtf(float x) {
 }
 
 HE3D_ALWAYS_INLINE float sqrtf(float x) {
-    if (HE3D_UNLIKELY(x <= 0.0f)) return 0.0f;
+    if (HE3D_UNLIKELY(x <= 0.0f))
+        return 0.0f;
     return 1.0f / rsqrtf(x);
 }
 
@@ -135,7 +144,7 @@ HE3D_ALWAYS_INLINE float sqrtf(float x) {
 HE3D_ALWAYS_INLINE float sinf(float x) {
     // Reduce to [-PI, PI] with period TAU.
     // 用 TAU 作为周期，将角度规约到 [-PI, PI]。
-    if (x >  3.141592653589793f) {
+    if (x > 3.141592653589793f) {
         int32_t n = (int32_t)(x * 0.15915494309189535f + 0.5f);
         x -= (float)n * 6.283185307179586f;
     }
@@ -156,7 +165,7 @@ HE3D_ALWAYS_INLINE float sinf(float x) {
     float x2 = x * x;
     float r = x;
     r += x * x2 * -0.16666656732559204f;       // minimax term near -1/3! / 接近 -1/3! 的 minimax 项
-    r += x * x2 * x2 *  0.0083330258358717f;   // minimax term near  1/5! / 接近  1/5! 的 minimax 项
+    r += x * x2 * x2 * 0.0083330258358717f;    // minimax term near  1/5! / 接近  1/5! 的 minimax 项
     r += x * x2 * x2 * x2 * -0.0001980740614f; // minimax term near -1/7! / 接近 -1/7! 的 minimax 项
     return r;
 }
@@ -187,7 +196,8 @@ HE3D_ALWAYS_INLINE void sincosf(float x, float *s, float *c) {
 HE3D_ALWAYS_INLINE float atan2f(float y, float x) {
     float ax = fabsf(x);
     if (ax < 0.000001f) {
-        if (fabsf(y) < 0.000001f) return 0.0f;
+        if (fabsf(y) < 0.000001f)
+            return 0.0f;
         return (y > 0.0f) ? 1.57079632679f : -1.57079632679f;
     }
 
@@ -196,35 +206,35 @@ HE3D_ALWAYS_INLINE float atan2f(float y, float x) {
     float z = y / x;
     float absZ = fabsf(z);
     int32_t inv = (absZ > 1.0f);
-    if (inv) z = 1.0f / z;
+    if (inv)
+        z = 1.0f / z;
 
     float z2 = z * z;
     // Coefficients generated for this approximation.
     // 该近似式使用的系数。
-    float at = z * (1.0f + z2 * (
-        -0.333333283662796f + z2 * (
-         0.199993550777435f + z2 * (
-        -0.142028367400169f + z2 *
-         0.10608633607626f))));
+    float at = z * (1.0f + z2 * (-0.333333283662796f + z2 * (0.199993550777435f + z2 * (-0.142028367400169f + z2 *
+                                                                                                                  0.10608633607626f))));
 
-    if (inv) at = (z > 0.0f ? 1.57079632679f : -1.57079632679f) - at;
-    if (x < 0.0f) at += (y >= 0.0f) ? 3.141592653589793f : -3.141592653589793f;
+    if (inv)
+        at = (z > 0.0f ? 1.57079632679f : -1.57079632679f) - at;
+    if (x < 0.0f)
+        at += (y >= 0.0f) ? 3.141592653589793f : -3.141592653589793f;
     return at;
 }
 
 // ============================================================================
 // [7] Utility macros / 工具宏
 // ============================================================================
-#define HE3D_MIN(a, b)         ((a) < (b) ? (a) : (b))
-#define HE3D_MAX(a, b)         ((a) > (b) ? (a) : (b))
-#define HE3D_CLAMP(x, lo, hi)  (HE3D_MAX(lo, HE3D_MIN(x, hi)))
-#define HE3D_ABS(x)            ((x) >= 0 ? (x) : -(x))
-#define HE3D_DEG2RAD(d)        ((d) * 0.017453292519943295f)
+#define HE3D_MIN(a, b) ((a) < (b) ? (a) : (b))
+#define HE3D_MAX(a, b) ((a) > (b) ? (a) : (b))
+#define HE3D_CLAMP(x, lo, hi) (HE3D_MAX(lo, HE3D_MIN(x, hi)))
+#define HE3D_ABS(x) ((x) >= 0 ? (x) : -(x))
+#define HE3D_DEG2RAD(d) ((d) * 0.017453292519943295f)
 
 // Precomputed constants used by math, transforms, and projection code.
 // 数学、变换和投影代码使用的预计算常量。
-static const float HE3D_PI       = 3.14159265358979323846f;
-static const float HE3D_TAU      = 6.28318530717958647692f;
+static const float HE3D_PI = 3.14159265358979323846f;
+static const float HE3D_TAU = 6.28318530717958647692f;
 static const float HE3D_PI_DIV_2 = 1.57079632679489661923f;
 
 // ============================================================================
@@ -235,11 +245,14 @@ struct float2 {
 
     HE3D_MEMBER_INLINE float2(float _x = 0, float _y = 0) : x(_x), y(_y) {}
 
-    HE3D_MEMBER_INLINE float2 operator+(const float2& v) const { return {x + v.x, y + v.y}; }
-    HE3D_MEMBER_INLINE float2 operator-(const float2& v) const { return {x - v.x, y - v.y}; }
-    HE3D_MEMBER_INLINE float2 operator*(float s)      const { return {x * s, y * s}; }
-    HE3D_MEMBER_INLINE float2 operator*(const float2& v) const { return {x * v.x, y * v.y}; }
-    HE3D_MEMBER_INLINE float2 operator/(float s)      const { float inv = 1.0f/s; return {x * inv, y * inv}; }
+    HE3D_MEMBER_INLINE float2 operator+(const float2 &v) const { return {x + v.x, y + v.y}; }
+    HE3D_MEMBER_INLINE float2 operator-(const float2 &v) const { return {x - v.x, y - v.y}; }
+    HE3D_MEMBER_INLINE float2 operator*(float s) const { return {x * s, y * s}; }
+    HE3D_MEMBER_INLINE float2 operator*(const float2 &v) const { return {x * v.x, y * v.y}; }
+    HE3D_MEMBER_INLINE float2 operator/(float s) const {
+        float inv = 1.0f / s;
+        return {x * inv, y * inv};
+    }
 };
 
 // ============================================================================
@@ -251,22 +264,26 @@ struct float3 {
     HE3D_MEMBER_INLINE float3(float _x = 0, float _y = 0, float _z = 0) : x(_x), y(_y), z(_z) {}
 
     // Arithmetic operators / 算术运算符
-    HE3D_MEMBER_INLINE float3 operator+(const float3& v) const { return {x + v.x, y + v.y, z + v.z}; }
-    HE3D_MEMBER_INLINE float3 operator-(const float3& v) const { return {x - v.x, y - v.y, z - v.z}; }
-    HE3D_MEMBER_INLINE float3 operator*(float s)        const { return {x * s, y * s, z * s}; }
-    HE3D_MEMBER_INLINE float3 operator*(const float3& v) const { return {x * v.x, y * v.y, z * v.z}; }
-    HE3D_MEMBER_INLINE float3 operator/(float s)        const { float inv = 1.0f/s; return {x * inv, y * inv, z * inv}; }
-    HE3D_MEMBER_INLINE float3 operator-()               const { return {-x, -y, -z}; }
+    HE3D_MEMBER_INLINE float3 operator+(const float3 &v) const { return {x + v.x, y + v.y, z + v.z}; }
+    HE3D_MEMBER_INLINE float3 operator-(const float3 &v) const { return {x - v.x, y - v.y, z - v.z}; }
+    HE3D_MEMBER_INLINE float3 operator*(float s) const { return {x * s, y * s, z * s}; }
+    HE3D_MEMBER_INLINE float3 operator*(const float3 &v) const { return {x * v.x, y * v.y, z * v.z}; }
+    HE3D_MEMBER_INLINE float3 operator/(float s) const {
+        float inv = 1.0f / s;
+        return {x * inv, y * inv, z * inv};
+    }
+    HE3D_MEMBER_INLINE float3 operator-() const { return {-x, -y, -z}; }
 
     // Geometry helpers / 几何辅助函数
-    HE3D_MEMBER_INLINE float lengthSq() const { return x*x + y*y + z*z; }
-    HE3D_MEMBER_INLINE float length()   const { return sqrtf(lengthSq()); }
+    HE3D_MEMBER_INLINE float lengthSq() const { return x * x + y * y + z * z; }
+    HE3D_MEMBER_INLINE float length() const { return sqrtf(lengthSq()); }
 
     // Standard normalize: sqrt plus divide.
     // 标准归一化：sqrt 加除法。
     HE3D_MEMBER_INLINE float3 normalize() const {
         float lsq = lengthSq();
-        if (HE3D_UNLIKELY(lsq < 0.0000001f)) return {0,0,0};
+        if (HE3D_UNLIKELY(lsq < 0.0000001f))
+            return {0, 0, 0};
         return (*this) * (1.0f / sqrtf(lsq));
     }
 
@@ -274,24 +291,24 @@ struct float3 {
     // 快速归一化：使用快速平方根倒数路径。
     HE3D_MEMBER_INLINE float3 normalizeFast() const {
         float lsq = lengthSq();
-        if (HE3D_UNLIKELY(lsq < 0.0000001f)) return {0,0,0};
+        if (HE3D_UNLIKELY(lsq < 0.0000001f))
+            return {0, 0, 0};
         return (*this) * rsqrtf(lsq);
     }
 
-    HE3D_MEMBER_INLINE static float  dot(const float3& a, const float3& b) {
-        return a.x*b.x + a.y*b.y + a.z*b.z;
+    HE3D_MEMBER_INLINE static float dot(const float3 &a, const float3 &b) {
+        return a.x * b.x + a.y * b.y + a.z * b.z;
     }
 
-    HE3D_MEMBER_INLINE static float3 cross(const float3& a, const float3& b) {
+    HE3D_MEMBER_INLINE static float3 cross(const float3 &a, const float3 &b) {
         return {
-            a.y*b.z - a.z*b.y,
-            a.z*b.x - a.x*b.z,
-            a.x*b.y - a.y*b.x
-        };
+            a.y * b.z - a.z * b.y,
+            a.z * b.x - a.x * b.z,
+            a.x * b.y - a.y * b.x};
     }
 
-    HE3D_MEMBER_INLINE static float3 lerp(const float3& a, const float3& b, float t) {
-        return {a.x + (b.x - a.x)*t, a.y + (b.y - a.y)*t, a.z + (b.z - a.z)*t};
+    HE3D_MEMBER_INLINE static float3 lerp(const float3 &a, const float3 &b, float t) {
+        return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t};
     }
 
     // Axis rotations with caller-provided sin/cos.
@@ -309,13 +326,19 @@ struct float3 {
     // Axis rotations that compute sin/cos internally.
     // 内部计算 sin/cos 的轴旋转。
     HE3D_MEMBER_INLINE float3 rotateY(float angle) const {
-        float s, c; sincosf(angle, &s, &c); return rotateY(s, c);
+        float s, c;
+        sincosf(angle, &s, &c);
+        return rotateY(s, c);
     }
     HE3D_MEMBER_INLINE float3 rotateX(float angle) const {
-        float s, c; sincosf(angle, &s, &c); return rotateX(s, c);
+        float s, c;
+        sincosf(angle, &s, &c);
+        return rotateX(s, c);
     }
     HE3D_MEMBER_INLINE float3 rotateZ(float angle) const {
-        float s, c; sincosf(angle, &s, &c); return rotateZ(s, c);
+        float s, c;
+        sincosf(angle, &s, &c);
+        return rotateZ(s, c);
     }
 };
 
@@ -328,10 +351,10 @@ struct color3 {
     HE3D_MEMBER_INLINE color3(float _r = 0, float _g = 0, float _b = 0)
         : r(_r), g(_g), b(_b) {}
 
-    HE3D_MEMBER_INLINE color3 operator+(const color3& c) const { return {r + c.r, g + c.g, b + c.b}; }
-    HE3D_MEMBER_INLINE color3 operator-(const color3& c) const { return {r - c.r, g - c.g, b - c.b}; }
+    HE3D_MEMBER_INLINE color3 operator+(const color3 &c) const { return {r + c.r, g + c.g, b + c.b}; }
+    HE3D_MEMBER_INLINE color3 operator-(const color3 &c) const { return {r - c.r, g - c.g, b - c.b}; }
     HE3D_MEMBER_INLINE color3 operator*(float s) const { return {r * s, g * s, b * s}; }
-    HE3D_MEMBER_INLINE color3 operator*(const color3& c) const { return {r * c.r, g * c.g, b * c.b}; }
+    HE3D_MEMBER_INLINE color3 operator*(const color3 &c) const { return {r * c.r, g * c.g, b * c.b}; }
     HE3D_MEMBER_INLINE color3 operator/(float s) const {
         float inv = 1.0f / s;
         return {r * inv, g * inv, b * inv};
@@ -342,25 +365,25 @@ struct color3 {
 // [11] Ray: 3D query helper / 三维查询辅助类型
 // ============================================================================
 struct RayHit {
-    bool   hit;
-    float  distance;
+    bool hit;
+    float distance;
     float3 position;
     float3 normal;
-    float  u;
-    float  v;
+    float u;
+    float v;
 
     HE3D_MEMBER_INLINE RayHit()
-        : hit(false), distance(0.0f), position{0,0,0}, normal{0,0,0}, u(0.0f), v(0.0f) {}
+        : hit(false), distance(0.0f), position{0, 0, 0}, normal{0, 0, 0}, u(0.0f), v(0.0f) {}
 };
 
 struct AABB {
     float3 min;
     float3 max;
 
-    HE3D_MEMBER_INLINE AABB(float3 _min = {0,0,0}, float3 _max = {0,0,0})
+    HE3D_MEMBER_INLINE AABB(float3 _min = {0, 0, 0}, float3 _max = {0, 0, 0})
         : min(_min), max(_max) {}
 
-    HE3D_MEMBER_INLINE bool Intersects(const AABB& other) const {
+    HE3D_MEMBER_INLINE bool Intersects(const AABB &other) const {
         return !(max.x < other.min.x || min.x > other.max.x ||
                  max.y < other.min.y || min.y > other.max.y ||
                  max.z < other.min.z || min.z > other.max.z);
@@ -371,7 +394,7 @@ struct Ray {
     float3 origin;
     float3 direction;
 
-    HE3D_MEMBER_INLINE Ray(float3 _origin = {0,0,0}, float3 _direction = {0,0,1})
+    HE3D_MEMBER_INLINE Ray(float3 _origin = {0, 0, 0}, float3 _direction = {0, 0, 1})
         : origin(_origin), direction(_direction) {}
 
     HE3D_MEMBER_INLINE static Ray FromTo(float3 from, float3 to) {
@@ -389,81 +412,104 @@ struct Ray {
     HE3D_MEMBER_INLINE bool IntersectSphere(float3 center, float radius, float *outDistance = nullptr) const {
         float3 oc = origin - center;
         float a = float3::dot(direction, direction);
-        if (HE3D_UNLIKELY(a < 0.0000001f)) return false;
+        if (HE3D_UNLIKELY(a < 0.0000001f))
+            return false;
         float b = 2.0f * float3::dot(oc, direction);
         float c = float3::dot(oc, oc) - radius * radius;
         float discriminant = b * b - 4.0f * a * c;
-        if (discriminant < 0.0f) return false;
+        if (discriminant < 0.0f)
+            return false;
 
         float root = sqrtf(discriminant);
         float invDenom = 0.5f / a;
         float t = (-b - root) * invDenom;
-        if (t < 0.0f) t = (-b + root) * invDenom;
-        if (t < 0.0f) return false;
+        if (t < 0.0f)
+            t = (-b + root) * invDenom;
+        if (t < 0.0f)
+            return false;
 
-        if (outDistance) *outDistance = t;
+        if (outDistance)
+            *outDistance = t;
         return true;
     }
 
     HE3D_MEMBER_INLINE bool IntersectPlane(float3 point, float3 normal, float *outDistance = nullptr) const {
         float denom = float3::dot(normal, direction);
-        if (fabsf(denom) < 0.000001f) return false;
+        if (fabsf(denom) < 0.000001f)
+            return false;
 
         float t = float3::dot(point - origin, normal) / denom;
-        if (t < 0.0f) return false;
+        if (t < 0.0f)
+            return false;
 
-        if (outDistance) *outDistance = t;
+        if (outDistance)
+            *outDistance = t;
         return true;
     }
 
     HE3D_MEMBER_INLINE bool IntersectTriangle(float3 v0, float3 v1, float3 v2,
-                                             float *outDistance = nullptr,
-                                             float *outU = nullptr,
-                                             float *outV = nullptr) const {
+                                              float *outDistance = nullptr,
+                                              float *outU = nullptr,
+                                              float *outV = nullptr) const {
         float3 edge1 = v1 - v0;
         float3 edge2 = v2 - v0;
         float3 pvec = float3::cross(direction, edge2);
         float det = float3::dot(edge1, pvec);
-        if (fabsf(det) < 0.000001f) return false;
+        if (fabsf(det) < 0.000001f)
+            return false;
 
         float invDet = 1.0f / det;
         float3 tvec = origin - v0;
         float u = float3::dot(tvec, pvec) * invDet;
-        if (u < 0.0f || u > 1.0f) return false;
+        if (u < 0.0f || u > 1.0f)
+            return false;
 
         float3 qvec = float3::cross(tvec, edge1);
         float v = float3::dot(direction, qvec) * invDet;
-        if (v < 0.0f || u + v > 1.0f) return false;
+        if (v < 0.0f || u + v > 1.0f)
+            return false;
 
         float t = float3::dot(edge2, qvec) * invDet;
-        if (t < 0.0f) return false;
+        if (t < 0.0f)
+            return false;
 
-        if (outDistance) *outDistance = t;
-        if (outU) *outU = u;
-        if (outV) *outV = v;
+        if (outDistance)
+            *outDistance = t;
+        if (outU)
+            *outU = u;
+        if (outV)
+            *outV = v;
         return true;
     }
 
-    HE3D_MEMBER_INLINE bool IntersectAABB(const AABB& box,
+    HE3D_MEMBER_INLINE bool IntersectAABB(const AABB &box,
                                           float *outNear = nullptr,
                                           float *outFar = nullptr) const {
         float tmin = 0.0f;
         float tmax = 340282346638528859811704183484516925440.0f;
 
 #define HE3D_RAY_AABB_AXIS(originAxis, directionAxis, minAxis, maxAxis) \
-        do { \
-            if (fabsf(directionAxis) < 0.000001f) { \
-                if ((originAxis) < (minAxis) || (originAxis) > (maxAxis)) return false; \
-            } else { \
-                float invD = 1.0f / (directionAxis); \
-                float t0 = ((minAxis) - (originAxis)) * invD; \
-                float t1 = ((maxAxis) - (originAxis)) * invD; \
-                if (t0 > t1) { float tmp = t0; t0 = t1; t1 = tmp; } \
-                if (t0 > tmin) tmin = t0; \
-                if (t1 < tmax) tmax = t1; \
-                if (tmax < tmin) return false; \
-            } \
-        } while (0)
+    do {                                                                \
+        if (fabsf(directionAxis) < 0.000001f) {                         \
+            if ((originAxis) < (minAxis) || (originAxis) > (maxAxis))   \
+                return false;                                           \
+        } else {                                                        \
+            float invD = 1.0f / (directionAxis);                        \
+            float t0 = ((minAxis) - (originAxis)) * invD;               \
+            float t1 = ((maxAxis) - (originAxis)) * invD;               \
+            if (t0 > t1) {                                              \
+                float tmp = t0;                                         \
+                t0 = t1;                                                \
+                t1 = tmp;                                               \
+            }                                                           \
+            if (t0 > tmin)                                              \
+                tmin = t0;                                              \
+            if (t1 < tmax)                                              \
+                tmax = t1;                                              \
+            if (tmax < tmin)                                            \
+                return false;                                           \
+        }                                                               \
+    } while (0)
 
         HE3D_RAY_AABB_AXIS(origin.x, direction.x, box.min.x, box.max.x);
         HE3D_RAY_AABB_AXIS(origin.y, direction.y, box.min.y, box.max.y);
@@ -471,14 +517,17 @@ struct Ray {
 
 #undef HE3D_RAY_AABB_AXIS
 
-        if (outNear) *outNear = tmin;
-        if (outFar) *outFar = tmax;
+        if (outNear)
+            *outNear = tmin;
+        if (outFar)
+            *outFar = tmax;
         return true;
     }
 
     HE3D_MEMBER_INLINE RayHit CastSphere(float3 center, float radius) const {
         RayHit result;
-        if (!IntersectSphere(center, radius, &result.distance)) return result;
+        if (!IntersectSphere(center, radius, &result.distance))
+            return result;
         result.hit = true;
         result.position = At(result.distance);
         result.normal = (result.position - center).normalizeFast();
@@ -487,7 +536,8 @@ struct Ray {
 
     HE3D_MEMBER_INLINE RayHit CastPlane(float3 point, float3 normal) const {
         RayHit result;
-        if (!IntersectPlane(point, normal, &result.distance)) return result;
+        if (!IntersectPlane(point, normal, &result.distance))
+            return result;
         result.hit = true;
         result.position = At(result.distance);
         result.normal = normal.normalizeFast();
@@ -496,7 +546,8 @@ struct Ray {
 
     HE3D_MEMBER_INLINE RayHit CastTriangle(float3 v0, float3 v1, float3 v2) const {
         RayHit result;
-        if (!IntersectTriangle(v0, v1, v2, &result.distance, &result.u, &result.v)) return result;
+        if (!IntersectTriangle(v0, v1, v2, &result.distance, &result.u, &result.v))
+            return result;
         result.hit = true;
         result.position = At(result.distance);
         result.normal = float3::cross(v1 - v0, v2 - v0).normalizeFast();
@@ -521,11 +572,10 @@ struct quat {
         sincosf(euler.x * 0.5f, &sp, &cp); // Pitch / 俯仰
         sincosf(euler.z * 0.5f, &sr, &cr); // Roll / 滚转
         return {
-            cy*cp*cr + sy*sp*sr,
-            cy*sp*cr + sy*cp*sr,
-            sy*cp*cr - cy*sp*sr,
-            cy*cp*sr - sy*sp*cr
-        };
+            cy * cp * cr + sy * sp * sr,
+            cy * sp * cr + sy * cp * sr,
+            sy * cp * cr - cy * sp * sr,
+            cy * cp * sr - sy * sp * cr};
     }
 
     // Fast Euler construction; kept for call sites that prefer the fast path.
@@ -535,54 +585,53 @@ struct quat {
         float sp = sinf(euler.x * 0.5f), cp = cosf(euler.x * 0.5f);
         float sr = sinf(euler.z * 0.5f), cr = cosf(euler.z * 0.5f);
         return {
-            cy*cp*cr + sy*sp*sr,
-            cy*sp*cr + sy*cp*sr,
-            sy*cp*cr - cy*sp*sr,
-            cy*cp*sr - sy*sp*cr
-        };
+            cy * cp * cr + sy * sp * sr,
+            cy * sp * cr + sy * cp * sr,
+            sy * cp * cr - cy * sp * sr,
+            cy * cp * sr - sy * sp * cr};
     }
 
     // Normalize to limit floating-point drift.
     // 归一化以限制浮点误差漂移。
     HE3D_MEMBER_INLINE quat normalize() const {
-        float mag = w*w + x*x + y*y + z*z;
-        if (HE3D_UNLIKELY(mag < 0.0000001f)) return {1,0,0,0};
+        float mag = w * w + x * x + y * y + z * z;
+        if (HE3D_UNLIKELY(mag < 0.0000001f))
+            return {1, 0, 0, 0};
         float inv = 1.0f / sqrtf(mag);
-        return {w*inv, x*inv, y*inv, z*inv};
+        return {w * inv, x * inv, y * inv, z * inv};
     }
 
     // Fast normalize using the reciprocal-square-root path.
     // 使用快速平方根倒数路径进行快速归一化。
     HE3D_MEMBER_INLINE quat normalizeFast() const {
-        float mag = w*w + x*x + y*y + z*z;
-        if (HE3D_UNLIKELY(mag < 0.0000001f)) return {1,0,0,0};
+        float mag = w * w + x * x + y * y + z * z;
+        if (HE3D_UNLIKELY(mag < 0.0000001f))
+            return {1, 0, 0, 0};
         float inv = rsqrtf(mag);
-        return {w*inv, x*inv, y*inv, z*inv};
+        return {w * inv, x * inv, y * inv, z * inv};
     }
 
     // Quaternion multiplication for rotation composition.
     // 四元数乘法，用于组合旋转。
-    HE3D_MEMBER_INLINE quat operator*(const quat& q) const {
+    HE3D_MEMBER_INLINE quat operator*(const quat &q) const {
         return {
-            w*q.w - x*q.x - y*q.y - z*q.z,
-            w*q.x + x*q.w + y*q.z - z*q.y,
-            w*q.y - x*q.z + y*q.w + z*q.x,
-            w*q.z + x*q.y - y*q.x + z*q.w
-        };
+            w * q.w - x * q.x - y * q.y - z * q.z,
+            w * q.x + x * q.w + y * q.z - z * q.y,
+            w * q.y - x * q.z + y * q.w + z * q.x,
+            w * q.z + x * q.y - y * q.x + z * q.w};
     }
 
     // Rotate a vector by this quaternion.
     // 使用该四元数旋转向量。
-    HE3D_MEMBER_INLINE float3 rotate(const float3& v) const {
-        float3 qv     = {x, y, z};
-        float  twoW   = 2.0f * w;
+    HE3D_MEMBER_INLINE float3 rotate(const float3 &v) const {
+        float3 qv = {x, y, z};
+        float twoW = 2.0f * w;
         float3 cross1 = float3::cross(qv, v);
         float3 cross2 = float3::cross(qv, cross1);
         return {
             v.x + twoW * cross1.x + 2.0f * cross2.x,
             v.y + twoW * cross1.y + 2.0f * cross2.y,
-            v.z + twoW * cross1.z + 2.0f * cross2.z
-        };
+            v.z + twoW * cross1.z + 2.0f * cross2.z};
     }
 
     // Inverse for unit quaternions is the conjugate.
@@ -597,9 +646,10 @@ struct float4x4 {
     float m[16];
 
     HE3D_MEMBER_INLINE float4x4() {
-        for (int32_t i = 0; i < 16; i++) m[i] = 0.0f;
+        for (int32_t i = 0; i < 16; i++)
+            m[i] = 0.0f;
         m[0] = m[5] = m[10] = m[15] = 1.0f;
     }
 };
 
-}
+} // namespace HE3D
