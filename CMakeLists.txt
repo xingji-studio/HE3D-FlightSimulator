@@ -132,24 +132,42 @@ if(HE3D_BACKEND STREQUAL "XAPI")
     set(XJ380_SDK_ROOT
         ""
         CACHE PATH
-        "Path to one matched XJ380 SDK/runtime root"
+        "Path to one matched XJ380 source/SDK root"
     )
 
     if(NOT XJ380_SDK_ROOT)
         message(FATAL_ERROR
             "XJ380_SDK_ROOT is required for HE3D_BACKEND=XAPI. "
-            "Pass -DXJ380_SDK_ROOT=/path/to/matched/xj380-sdk")
+            "Pass -DXJ380_SDK_ROOT=/path/to/matched/xj380")
     endif()
 
-    set(XJ380_GUI_RUNTIME_DIR
-        "${XJ380_SDK_ROOT}/obj-gui"
+    if(EXISTS "${XJ380_SDK_ROOT}/user/xapi/include")
+        set(HE3D_DEFAULT_XJ380_INCLUDE_DIR "${XJ380_SDK_ROOT}/user/xapi/include")
+    else()
+        set(HE3D_DEFAULT_XJ380_INCLUDE_DIR "${XJ380_SDK_ROOT}/include")
+    endif()
+
+    set(XJ380_XAPI_INCLUDE_DIR
+        "${HE3D_DEFAULT_XJ380_INCLUDE_DIR}"
         CACHE PATH
-        "Path to matched XJ380 GUI runtime objects"
+        "Path to matched XJ380 XAPI headers"
     )
+
+    set(XJ380_GUI_RUNTIME_DIR
+        "${XJ380_SDK_ROOT}/out/xapi"
+        CACHE PATH
+        "Path to matched XJ380 XAPI runtime objects"
+    )
+
+    if(NOT EXISTS "${XJ380_XAPI_INCLUDE_DIR}/x3api.h")
+        message(FATAL_ERROR
+            "XJ380 XAPI headers not found at ${XJ380_XAPI_INCLUDE_DIR}. "
+            "Set XJ380_XAPI_INCLUDE_DIR to the matched include directory.")
+    endif()
 
     if(NOT EXISTS "${XJ380_GUI_RUNTIME_DIR}")
         message(FATAL_ERROR
-            "XJ380 GUI runtime objects not found at ${XJ380_GUI_RUNTIME_DIR}. "
+            "XJ380 XAPI runtime objects not found at ${XJ380_GUI_RUNTIME_DIR}. "
             "Set XJ380_GUI_RUNTIME_DIR only if it belongs to the same SDK root.")
     endif()
 
@@ -163,7 +181,7 @@ if(HE3D_BACKEND STREQUAL "XAPI")
             ${CMAKE_CURRENT_SOURCE_DIR}/include
         PRIVATE
             ${HE3D_PRIVATE_INCLUDE_DIRS}
-            ${XJ380_SDK_ROOT}/include
+            ${XJ380_XAPI_INCLUDE_DIR}
     )
 
     target_compile_options(he3d_engine_xapi
