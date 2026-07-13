@@ -43,3 +43,34 @@ _Avoid_: public API unit test, internal implementation test
 **Developer Note**:
 An internal project note for debugging lessons, implementation constraints, and internal test rules that are useful to HE3D maintainers but are not part of the public API contract. Developer notes can mention internals that the technical manual must not promise to users.
 _Avoid_: public manual, API reference
+
+## Repository notes
+
+- Files under `docs/` are user-facing technical manuals and API documentation, not scratch notes for agents.
+- Agent-facing maintenance notes belong in this file unless a more specific internal note exists.
+
+## XAPI verification notes
+
+- `HE3D_BACKEND=XAPI` must require an explicit `-DXJ380_SDK_ROOT=...`. Do not add default sibling-path guessing for XJ380 or XAPI dependencies.
+- Developers are not assumed to have XJ380 source checked out. If they do have a compatible SDK/runtime layout, they must pass its root explicitly.
+- For this machine only, XAPI verification can use `/home/Bnear8273/Projects/XJ380` as `XJ380_SDK_ROOT`.
+- For this machine only, XSWL-C can smoke-run XAPI ELF outputs with `/home/Bnear8273/Projects/XSWL-C/build/xswl`.
+
+Example local XAPI verification:
+
+```bash
+cmake -S /home/Bnear8273/Projects/HE3D \
+  -B /home/Bnear8273/Projects/HE3D/build-xapi \
+  -DHE3D_BACKEND=XAPI \
+  -DHE3D_EXAMPLE=TriangleTest \
+  -DXJ380_SDK_ROOT=/home/Bnear8273/Projects/XJ380 \
+  -DCMAKE_CXX_COMPILER=clang++
+
+cmake --build /home/Bnear8273/Projects/HE3D/build-xapi -j2
+
+SDL_VIDEODRIVER=dummy timeout 3s \
+  /home/Bnear8273/Projects/XSWL-C/build/xswl --nodebug \
+  /home/Bnear8273/Projects/HE3D/build-xapi/he3d_triangle_test.elf
+```
+
+For interactive examples, exit code 124 from `timeout` is expected after successful startup. Treat startup output before timeout as the useful smoke-test signal.

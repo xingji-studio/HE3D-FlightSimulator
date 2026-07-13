@@ -45,12 +45,3 @@
 ```bash
 cmake -S . -B build-xapi -DHE3D_BACKEND=XAPI -DXJ380_SDK_ROOT=/path/to/sdk
 ```
-
-On a development machine with XSWL-C installed, run an XAPI smoke test explicitly:
-
-```bash
-SDL_VIDEODRIVER=dummy timeout 3s /path/to/XSWL-C/build/xswl --nodebug \
-  build-xapi/he3d_triangle_test.elf
-```
-
-Interactive examples timing out under `timeout` is expected after successful startup.
