@@ -1,7 +1,7 @@
 # Build outputs
 build/
-build-xapi/
-build-root/
+build-*/
+cmake-build-*/
 he3d_flight
 he3d_flight.exe
 xxcc-temp-out/
@@ -13,6 +13,8 @@ obj-tui/
 *.exe
 
 # Local tools and state
+.cache/
+CMakeUserPresets.json
 filebrowser
 filebrowser.db
 .claude/
