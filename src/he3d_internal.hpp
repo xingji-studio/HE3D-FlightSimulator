@@ -40,7 +40,6 @@ struct InternalContactShape {
    int32_t           edgeAxisCount;
    const Mesh       *mesh;
    AABB              localBounds;
-
 };
 
 namespace Detail
@@ -51,7 +50,7 @@ class ColliderAccess
  public:
    static InternalContactShape From(const GameObject &object, const BoxCollider &collider);
    static InternalContactShape From(const GameObject &object, const ConvexCollider &collider);
-   static InternalContactShape From(const GameObject &object, const StaticMeshCollider &collider);
+   static InternalContactShape From(const GameObject &object, const MeshCollider &collider);
 };
 
 class ContactPipeline

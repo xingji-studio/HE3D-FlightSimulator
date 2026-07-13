@@ -13,10 +13,12 @@
 // Global new/delete must stay at global scope and forward to HE3D::Alloc/Free.
 // 全局 new/delete 必须位于全局命名空间，并转发到 HE3D::Alloc/Free。
 // ============================================================================
-void *operator new(unsigned long size);
-void *operator new[](unsigned long size);
+void *operator new(__SIZE_TYPE__ size);
+void *operator new[](__SIZE_TYPE__ size);
 void  operator delete(void *ptr) noexcept;
 void  operator delete[](void *ptr) noexcept;
+void  operator delete(void *ptr, __SIZE_TYPE__ size) noexcept;
+void  operator delete[](void *ptr, __SIZE_TYPE__ size) noexcept;
 
 namespace HE3D
 {
@@ -50,38 +52,43 @@ struct DirectionalLight {
 class Mesh
 {
  public:
-   float3 *vertices;   // new[] allocated; 3 vertices per triangle / new[]
-                       // 分配；每个三角形 3 个顶点
-   float2 *uvs;        // new[] allocated; same capacity as vertices / new[]
-                       // 分配；容量与 vertices 相同
-   float3 *triNormals; // one normal per triangle / 每个三角形一条法线
-   int32_t vertCount;  // active vertex count / 当前有效顶点数
-   int32_t capacity;   // allocated vertex capacity / 已分配顶点容量
+   Mesh();
+   ~Mesh();
 
-   Mesh() : vertices(nullptr), uvs(nullptr), triNormals(nullptr), vertCount(0), capacity(0) {}
-   ~Mesh()
-   {
-      delete[] vertices;
-      delete[] uvs;
-      delete[] triNormals;
-   }
-
-   // Copying is disabled because Mesh owns raw arrays.
-   // Mesh 拥有原始数组，因此禁止拷贝。
+   Mesh(Mesh &&other);
+   Mesh &operator=(Mesh &&other);
    Mesh(const Mesh &)            = delete;
    Mesh &operator=(const Mesh &) = delete;
 
+   bool          IsValid() const;
+   int32_t       GetVertexCount() const;
+   const float3 *GetVertices() const;
+   const float2 *GetUVs() const;
+   const float3 *GetTriangleNormals() const;
+
+   static Mesh Create(const float3 *srcVertices, int32_t vertexCount);
+   static Mesh Create(const float3 *srcVertices, const float2 *srcUvs, int32_t vertexCount);
+   static Mesh CreateTriangle(float width = 1.0f, float height = 1.0f);
+   static Mesh CreatePlane(float width = 1.0f, float depth = 1.0f);
+   static Mesh CreateCube(float width = 1.0f, float height = 1.0f, float depth = 1.0f);
+   static Mesh CreateSphere(float radius = 0.5f, int32_t segments = 16, int32_t rings = 8);
+   static Mesh LoadOBJ(const char *filename);
+
+ private:
+   friend class MeshCollider;
+   friend class ConvexCollider;
+   float3 *m_vertices;
+   float2 *m_uvs;
+   float3 *m_triangleNormals;
+   int32_t m_vertexCount;
+   int32_t m_capacity;
+
+   static Mesh Create(int32_t vertexCount);
+
    bool Init(int32_t vertexCount);
    bool Init(const float3 *srcVertices, const float2 *srcUvs, int32_t vertexCount);
+   void Reset();
    void RecalculateTriangleNormals();
-
-   static Mesh *Create(int32_t vertexCount);
-   static Mesh *Create(const float3 *srcVertices, const float2 *srcUvs, int32_t vertexCount);
-   static Mesh *CreateTriangle(float width = 1.0f, float height = 1.0f);
-   static Mesh *CreatePlane(float width = 1.0f, float depth = 1.0f);
-   static Mesh *CreateCube(float width = 1.0f, float height = 1.0f, float depth = 1.0f);
-   static Mesh *CreateSphere(float radius = 0.5f, int32_t segments = 16, int32_t rings = 8);
-   static Mesh *LoadOBJ(const char *filename);
 };
 
 // ============================================================================
@@ -91,23 +98,30 @@ class Mesh
 class Texture
 {
  public:
-   int32_t width;
-   int32_t height;
-   ColorA *pixels; // new[] allocated; width * height pixels / new[] 分配；共
-                   // width * height 个像素
-   bool valid;
+   Texture();
+   ~Texture();
 
-   Texture() : width(0), height(0), pixels(nullptr), valid(false) {}
-   ~Texture() { delete[] pixels; }
-
+   Texture(Texture &&other);
+   Texture &operator=(Texture &&other);
    Texture(const Texture &)            = delete;
    Texture &operator=(const Texture &) = delete;
 
-   color3          Sample(float u, float v) const;
-   static Texture *LoadBMP(const char *filename);
-   static Texture *LoadPNG(const char *filename);
-   static Texture *LoadJPG(const char *filename);
-   static Texture *LoadImage(const char *filename);
+   int32_t GetWidth() const;
+   int32_t GetHeight() const;
+   bool    IsValid() const;
+   color3  Sample(float u, float v) const;
+
+   static Texture Create(const ColorA *pixels, int32_t width, int32_t height);
+   static Texture LoadImage(const char *filename);
+
+ private:
+   friend class Renderer;
+   int32_t m_width;
+   int32_t m_height;
+   ColorA *m_pixels;
+   bool    m_valid;
+
+   void Reset();
 };
 
 // ============================================================================
@@ -117,16 +131,25 @@ class Texture
 class GameObject
 {
  public:
-   Mesh *mesh;         // shape to draw; GameObject does not own it /
-                       // 要绘制的形状；GameObject 不负责释放它
    float3 position;    // world-space position / 世界空间位置
    quat   orientation; // world-space rotation / 世界空间旋转
 
-   GameObject() : mesh(nullptr), position{0, 0, 0}, orientation{1, 0, 0, 0} {}
+   explicit GameObject(Mesh &mesh);
+
+   Mesh       &GetMesh();
+   const Mesh &GetMesh() const;
+   void        SetMesh(Mesh &mesh);
 
    // Return local +Z transformed to world space.
    // 返回局部 +Z 方向转换到世界空间后的方向。
    float3 Forward() const { return orientation.rotate({0, 0, 1}); }
+
+ private:
+   Mesh *m_mesh;
+
+   GameObject()                              = delete;
+   GameObject(const GameObject &)            = delete;
+   GameObject &operator=(const GameObject &) = delete;
 };
 
 // ============================================================================
@@ -215,8 +238,7 @@ class HeightFieldCollider
 /// Raycast triangles in a GameObject mesh and optionally return hit details and
 /// triangle index. 对 GameObject mesh
 /// 的三角形做射线检测，并可返回命中信息和三角形索引。
-bool RaycastMeshTriangles(const Ray &ray, const GameObject &object, RayHit *outHit = nullptr,
-                          int32_t *outTriangleIndex = nullptr);
+RayHit RaycastMeshTriangles(const Ray &ray, const GameObject &object);
 
 // ============================================================================
 // BoxCollider stores a dynamic oriented box shape.
@@ -228,9 +250,11 @@ class BoxCollider
    BoxCollider();
    BoxCollider(float width, float height, float depth);
 
-   bool SetSize(float width, float height, float depth);
-   bool IsValid() const;
-   AABB LocalAABB() const;
+   bool  SetSize(float width, float height, float depth);
+   bool  IsValid() const;
+   AABB  LocalAABB() const;
+   float EstimateInertia(float mass) const;
+   float EstimateDamping(float mass = 1.0f) const;
 
  private:
    friend class PhysicsScene;
@@ -251,12 +275,14 @@ class ConvexCollider
 {
  public:
    ConvexCollider();
-   explicit ConvexCollider(const Mesh *mesh);
+   explicit ConvexCollider(const Mesh &mesh);
    ~ConvexCollider();
 
-   bool BuildFromMesh(const Mesh *mesh);
-   bool IsValid() const;
-   AABB LocalAABB() const;
+   bool  BuildFromMesh(const Mesh &mesh);
+   bool  IsValid() const;
+   AABB  LocalAABB() const;
+   float EstimateInertia(float mass) const;
+   float EstimateDamping(float mass = 1.0f) const;
 
  private:
    friend class PhysicsScene;
@@ -278,18 +304,19 @@ class ConvexCollider
 };
 
 // ============================================================================
-// StaticMeshCollider stores immovable triangle scene geometry.
-// StaticMeshCollider 保存不可移动的三角形场景几何体。
+// MeshCollider borrows a mesh and uses its current triangle geometry.
+// MeshCollider 借用 mesh，并使用它当前的三角形几何。
 // ============================================================================
-class StaticMeshCollider
+class MeshCollider
 {
  public:
-   StaticMeshCollider();
-   explicit StaticMeshCollider(const Mesh *mesh);
+   explicit MeshCollider(const Mesh &mesh);
 
-   bool BuildFromMesh(const Mesh *mesh);
-   bool IsValid() const;
-   AABB LocalAABB() const;
+   void  Refresh();
+   bool  IsValid() const;
+   AABB  LocalAABB() const;
+   float EstimateInertia(float mass) const;
+   float EstimateDamping(float mass = 1.0f) const;
 
  private:
    friend class PhysicsScene;
@@ -299,116 +326,42 @@ class StaticMeshCollider
    AABB        m_localBounds;
    bool        m_valid;
 
-   StaticMeshCollider(const StaticMeshCollider &)            = delete;
-   StaticMeshCollider &operator=(const StaticMeshCollider &) = delete;
+   MeshCollider()                                = delete;
+   MeshCollider(const MeshCollider &)            = delete;
+   MeshCollider &operator=(const MeshCollider &) = delete;
 };
 
 // ============================================================================
-// PhysicsBody stores physical state for PhysicsScene.
-// PhysicsBody 保存交给 PhysicsScene 求解的物理状态。
+// PhysicsProperties stores reusable body configuration.
+// PhysicsProperties 保存可复用的物理配置。
 // ============================================================================
-class PhysicsBody
+enum class PhysicsSettingResult { Applied, AppliedWithWarning, Rejected };
+
+class PhysicsProperties
 {
  public:
-   /// Bound object moved by PhysicsScene; PhysicsBody does not own it.
-   /// 由 PhysicsScene 推进的绑定物体；PhysicsBody 不拥有它。
-   GameObject *object;
-   /// Linear velocity in world units per second; affects object position.
-   /// 世界单位每秒的线速度；影响物体位置。
-   float3 velocity;
-   /// Angular velocity in radians per second; affects object orientation.
-   /// 弧度每秒的角速度；影响物体朝向。
-   float3 angularVelocity;
-   /// Accumulated force applied during the next PhysicsScene step.
-   /// 下一次 PhysicsScene 推进时使用的累计力。
-   float3 force;
-   /// Accumulated torque applied during the next PhysicsScene step.
-   /// 下一次 PhysicsScene 推进时使用的累计力矩。
-   float3 torque;
-   /// Per-body gravity acceleration.
-   /// 此刚体使用的重力加速度。
-   float3 gravity;
-   /// Mass value; use SetMass so inverseMass stays synchronized.
-   /// 质量；请用 SetMass 保持 inverseMass 同步。
-   float mass;
-   /// Cached inverse mass used by the solver.
-   /// 求解器使用的质量倒数缓存。
-   float inverseMass;
-   /// Rotational inertia value; AddBody estimates it from collider bounds unless
-   /// SetInertia overrides it. 转动惯量；AddBody 会按 collider 边界估算，除非
-   /// SetInertia 手动覆盖。
-   float inertia;
-   /// Cached inverse inertia used by the solver.
-   /// 求解器使用的转动惯量倒数缓存。
-   float inverseInertia;
-   /// Contact bounce coefficient; 0 means no bounce.
-   /// 接触反弹系数；0 表示不反弹。
-   float restitution;
-   /// Contact friction coefficient used only while resolving collisions.
-   /// 接触摩擦系数，只在碰撞解算时使用。
-   float friction;
-   /// Per-body damping that reduces both velocity and angularVelocity.
-   /// 单体阻尼，同时衰减线速度和角速度。
-   float damping;
+   PhysicsProperties();
 
-   /// Construct a disabled body with no bound object.
-   /// 构造未绑定物体且默认禁用的刚体。
-   PhysicsBody();
-   /// Construct a disabled body bound to gameObject.
-   /// 构造绑定到 gameObject 且默认禁用的刚体。
-   explicit PhysicsBody(GameObject *gameObject);
+   float GetMass() const;
+   float GetInertia() const;
+   float GetFriction() const;
+   float GetRestitution() const;
+   float GetDamping() const;
 
-   /// Bind this body to a different GameObject.
-   /// 将此刚体绑定到另一个 GameObject。
-   void BindGameObject(GameObject *gameObject);
-   /// Enable or disable integration and impulse response for this body.
-   /// 启用或禁用此刚体的积分和冲量响应。
-   void SetEnabled(bool enabled);
-   /// Return whether this body participates as a dynamic body.
-   /// 返回此刚体是否作为动态刚体参与求解。
-   bool IsEnabled() const;
-   /// Return whether inertia was manually configured.
-   /// 返回惯量是否由调用方手动配置。
-   bool UsesManualInertia() const;
-   /// Set mass and update inverseMass; AddBody will estimate inertia from
-   /// collider bounds. 设置质量并更新 inverseMass；AddBody 会按 collider
-   /// 边界估算惯量。
-   void SetMass(float value);
-   /// Set rotational inertia manually and update inverseInertia; non-positive
-   /// inertia disables angular impulse. 手动设置转动惯量并更新
-   /// inverseInertia；非正惯量会禁用角冲量。
-   void SetInertia(float value);
-
-   /// Set linear velocity directly.
-   /// 直接设置线速度。
-   void SetVelocity(float3 value);
-   /// Set angular velocity directly.
-   /// 直接设置角速度。
-   void SetAngularVelocity(float3 value);
-   /// Accumulate force for the next PhysicsScene step.
-   /// 为下一次 PhysicsScene 推进累计力。
-   void AddForce(float3 value);
-   /// Apply an immediate linear impulse.
-   /// 立即施加线性冲量。
-   void AddImpulse(float3 impulse);
-   /// Apply an immediate angular impulse.
-   /// 立即施加角冲量。
-   void AddAngularImpulse(float3 impulse);
-   /// Accumulate torque for the next PhysicsScene step.
-   /// 为下一次 PhysicsScene 推进累计力矩。
-   void AddTorque(float3 value);
-   /// Clear accumulated force.
-   /// 清空累计力。
-   void ClearForces();
-   /// Clear accumulated torque.
-   /// 清空累计力矩。
-   void ClearTorques();
+   PhysicsSettingResult SetMass(float value);
+   PhysicsSettingResult SetInertia(float value);
+   PhysicsSettingResult SetFriction(float value);
+   PhysicsSettingResult SetRestitution(float value);
+   PhysicsSettingResult SetDamping(float value);
 
  private:
    friend class PhysicsScene;
 
-   bool m_enabled;
-   bool m_inertiaManual;
+   float m_mass;
+   float m_inertia;
+   float m_friction;
+   float m_restitution;
+   float m_damping;
 };
 
 // ============================================================================
@@ -423,19 +376,29 @@ class PhysicsScene
    explicit PhysicsScene(int32_t capacity = 32);
    ~PhysicsScene();
 
-   /// Scene-wide medium drag that damps velocity and angularVelocity of all
-   /// enabled bodies. 场景介质阻力，会衰减所有启用刚体的线速度和角速度。
+   /// Scene-wide medium drag that damps velocity and angularVelocity.
+   /// 场景介质阻力，会衰减线速度和角速度。
    float drag;
 
-   /// Add a dynamic box body to this scene.
-   /// 将动态盒体刚体加入此场景。
-   bool AddBody(GameObject *object, PhysicsBody *body, BoxCollider *collider);
-   /// Add a dynamic convex body to this scene.
-   /// 将动态凸体刚体加入此场景。
-   bool AddBody(GameObject *object, PhysicsBody *body, ConvexCollider *collider);
-   /// Add immovable static mesh geometry to this scene.
-   /// 将不可移动静态网格加入此场景。
-   bool AddStatic(GameObject *object, StaticMeshCollider *collider);
+   bool AddStaticBody(GameObject &object, MeshCollider &collider);
+   bool AddDynamicBody(GameObject &object, BoxCollider &collider, PhysicsProperties &properties);
+   bool AddDynamicBody(GameObject &object, ConvexCollider &collider, PhysicsProperties &properties);
+   bool RemoveBody(GameObject &object);
+   bool RefreshCollider(GameObject &object);
+   bool HasBody(const GameObject &object) const;
+   bool IsDynamicBody(const GameObject &object) const;
+   void SetGravity(float3 value);
+   float3 GetGravity() const;
+
+   float3 GetVelocity(const GameObject &object) const;
+   float3 GetAngularVelocity(const GameObject &object) const;
+   bool   SetVelocity(GameObject &object, const float3 &velocity);
+   bool   SetAngularVelocity(GameObject &object, const float3 &angularVelocity);
+   bool   AddForce(GameObject &object, const float3 &force);
+   bool   AddTorque(GameObject &object, const float3 &torque);
+   bool   AddImpulse(GameObject &object, const float3 &impulse);
+   bool   AddAngularImpulse(GameObject &object, const float3 &impulse);
+
    /// Remove all dynamic bodies and static colliders from this scene.
    /// 移除此场景中的所有动态刚体和静态碰撞体。
    void Clear();

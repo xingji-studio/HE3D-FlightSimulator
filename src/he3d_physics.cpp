@@ -3,16 +3,30 @@
 namespace HE3D
 {
 
-enum class ColliderEntryKind { Empty, Box, Convex, StaticMesh };
+enum class ColliderEntryKind { Empty, Box, Convex, Mesh };
+
+struct PhysicsRuntimeState {
+   float3 velocity;
+   float3 angularVelocity;
+   float3 force;
+   float3 torque;
+
+   PhysicsRuntimeState()
+       : velocity{0, 0, 0}, angularVelocity{0, 0, 0}, force{0, 0, 0}, torque{0, 0, 0}
+   {
+   }
+};
 
 struct PhysicsSceneEntry {
-   GameObject       *object;
-   PhysicsBody      *body;
-   void             *collider;
-   ColliderEntryKind kind;
+   GameObject         *object;
+   PhysicsProperties  *properties;
+   void               *collider;
+   ColliderEntryKind   kind;
+   PhysicsRuntimeState runtime;
 
    PhysicsSceneEntry()
-       : object(nullptr), body(nullptr), collider(nullptr), kind(ColliderEntryKind::Empty)
+       : object(nullptr), properties(nullptr), collider(nullptr), kind(ColliderEntryKind::Empty),
+         runtime()
    {
    }
 };
@@ -21,8 +35,10 @@ struct PhysicsSceneState {
    PhysicsSceneEntry *entries;
    int32_t            entryCount;
    int32_t            entryCapacity;
+   float3             gravity;
 
-   explicit PhysicsSceneState(int32_t capacity) : entries(nullptr), entryCount(0), entryCapacity(0)
+   explicit PhysicsSceneState(int32_t capacity)
+       : entries(nullptr), entryCount(0), entryCapacity(0), gravity{0, -9.8f, 0}
    {
       if (capacity < 1) {
          capacity = 1;
@@ -37,6 +53,26 @@ struct PhysicsSceneState {
 
    bool HasCapacity() const { return entryCount < entryCapacity; }
 
+   PhysicsSceneEntry *Find(const GameObject &object)
+   {
+      for (int32_t i = 0; i < entryCount; i++) {
+         if (entries[i].object == &object) {
+            return &entries[i];
+         }
+      }
+      return nullptr;
+   }
+
+   const PhysicsSceneEntry *Find(const GameObject &object) const
+   {
+      for (int32_t i = 0; i < entryCount; i++) {
+         if (entries[i].object == &object) {
+            return &entries[i];
+         }
+      }
+      return nullptr;
+   }
+
    PhysicsSceneEntry &Append()
    {
       PhysicsSceneEntry &entry = entries[entryCount];
@@ -49,61 +85,61 @@ struct PhysicsSceneState {
    PhysicsSceneState &operator=(const PhysicsSceneState &) = delete;
 };
 
-PhysicsBody::PhysicsBody()
-    : object(nullptr), velocity{0, 0, 0}, angularVelocity{0, 0, 0}, force{0, 0, 0}, torque{0, 0, 0},
-      gravity{0, -9.8f, 0}, mass(1.0f), inverseMass(1.0f), inertia(1.0f), inverseInertia(1.0f),
-      restitution(0.0f), friction(0.5f), damping(0.0f), m_enabled(false), m_inertiaManual(false)
+PhysicsProperties::PhysicsProperties()
+    : m_mass(1.0f), m_inertia(1.0f), m_friction(0.5f), m_restitution(0.0f), m_damping(0.0f)
 {
 }
 
-PhysicsBody::PhysicsBody(GameObject *gameObject)
-    : object(gameObject), velocity{0, 0, 0}, angularVelocity{0, 0, 0}, force{0, 0, 0},
-      torque{0, 0, 0}, gravity{0, -9.8f, 0}, mass(1.0f), inverseMass(1.0f), inertia(1.0f),
-      inverseInertia(1.0f), restitution(0.0f), friction(0.5f), damping(0.0f), m_enabled(false),
-      m_inertiaManual(false)
+float PhysicsProperties::GetMass() const { return m_mass; }
+float PhysicsProperties::GetInertia() const { return m_inertia; }
+float PhysicsProperties::GetFriction() const { return m_friction; }
+float PhysicsProperties::GetRestitution() const { return m_restitution; }
+float PhysicsProperties::GetDamping() const { return m_damping; }
+
+PhysicsSettingResult PhysicsProperties::SetMass(float value)
 {
+   if (value <= 0.0f) {
+      return PhysicsSettingResult::Rejected;
+   }
+   m_mass = value;
+   return PhysicsSettingResult::Applied;
 }
 
-void PhysicsBody::BindGameObject(GameObject *gameObject) { object = gameObject; }
-
-void PhysicsBody::SetEnabled(bool enabled) { m_enabled = enabled; }
-
-bool PhysicsBody::IsEnabled() const { return m_enabled; }
-
-bool PhysicsBody::UsesManualInertia() const { return m_inertiaManual; }
-
-void PhysicsBody::SetMass(float value)
+PhysicsSettingResult PhysicsProperties::SetInertia(float value)
 {
-   mass            = value;
-   inverseMass     = value > 0.0f ? 1.0f / value : 0.0f;
-   m_inertiaManual = false;
+   if (value <= 0.0f) {
+      return PhysicsSettingResult::Rejected;
+   }
+   m_inertia = value;
+   return PhysicsSettingResult::Applied;
 }
 
-void PhysicsBody::SetInertia(float value)
+PhysicsSettingResult PhysicsProperties::SetFriction(float value)
 {
-   inertia         = value;
-   inverseInertia  = value > 0.0f ? 1.0f / value : 0.0f;
-   m_inertiaManual = true;
+   if (value < 0.0f) {
+      return PhysicsSettingResult::Rejected;
+   }
+   m_friction = value;
+   return PhysicsSettingResult::Applied;
 }
 
-void PhysicsBody::SetVelocity(float3 value) { velocity = value; }
-
-void PhysicsBody::SetAngularVelocity(float3 value) { angularVelocity = value; }
-
-void PhysicsBody::AddForce(float3 value) { force = force + value; }
-
-void PhysicsBody::AddImpulse(float3 impulse) { velocity = velocity + impulse * inverseMass; }
-
-void PhysicsBody::AddAngularImpulse(float3 impulse)
+PhysicsSettingResult PhysicsProperties::SetRestitution(float value)
 {
-   angularVelocity = angularVelocity + impulse * inverseInertia;
+   if (value < 0.0f) {
+      return PhysicsSettingResult::Rejected;
+   }
+   m_restitution = value;
+   return value > 1.0f ? PhysicsSettingResult::AppliedWithWarning : PhysicsSettingResult::Applied;
 }
 
-void PhysicsBody::AddTorque(float3 value) { torque = torque + value; }
-
-void PhysicsBody::ClearForces() { force = {0, 0, 0}; }
-
-void PhysicsBody::ClearTorques() { torque = {0, 0, 0}; }
+PhysicsSettingResult PhysicsProperties::SetDamping(float value)
+{
+   if (value < 0.0f) {
+      return PhysicsSettingResult::Rejected;
+   }
+   m_damping = value;
+   return PhysicsSettingResult::Applied;
+}
 
 PhysicsScene::PhysicsScene(int32_t capacity) : drag(0.02f), m_impl(new PhysicsSceneState(capacity))
 {
@@ -118,150 +154,261 @@ void PhysicsScene::Clear()
    }
 }
 
-static float EstimateBoxInertia(float3 halfExtents, float mass)
+static bool IsDynamicKind(ColliderEntryKind kind)
 {
-   if (mass <= 0.0f) {
+   return kind == ColliderEntryKind::Box || kind == ColliderEntryKind::Convex;
+}
+
+static float InverseMass(const PhysicsSceneEntry *entry)
+{
+   if (!entry || !IsDynamicKind(entry->kind) || !entry->properties ||
+       entry->properties->GetMass() <= 0.0f) {
       return 0.0f;
    }
-
-   float width  = halfExtents.x * 2.0f;
-   float height = halfExtents.y * 2.0f;
-   float depth  = halfExtents.z * 2.0f;
-   if (width < 0.001f) width = 0.001f;
-   if (height < 0.001f) height = 0.001f;
-   if (depth < 0.001f) depth = 0.001f;
-
-   float ix = mass * (height * height + depth * depth) / 12.0f;
-   float iy = mass * (width * width + depth * depth) / 12.0f;
-   float iz = mass * (width * width + height * height) / 12.0f;
-   return (ix + iy + iz) / 3.0f;
+   return 1.0f / entry->properties->GetMass();
 }
 
-static void UpdateAutomaticInertia(PhysicsBody *body, AABB localBounds)
+static float InverseInertia(const PhysicsSceneEntry *entry)
 {
-   if (!body || body->UsesManualInertia()) {
-      return;
+   if (!entry || !IsDynamicKind(entry->kind) || !entry->properties ||
+       entry->properties->GetInertia() <= 0.0f) {
+      return 0.0f;
    }
-   float3 halfExtents      = (localBounds.max - localBounds.min) * 0.5f;
-   float  estimatedInertia = EstimateBoxInertia(halfExtents, body->mass);
-   body->inertia           = estimatedInertia;
-   body->inverseInertia    = estimatedInertia > 0.0f ? 1.0f / estimatedInertia : 0.0f;
+   return 1.0f / entry->properties->GetInertia();
 }
 
-bool PhysicsScene::AddBody(GameObject *object, PhysicsBody *body, BoxCollider *collider)
+bool PhysicsScene::AddStaticBody(GameObject &object, MeshCollider &collider)
 {
-   if (!m_impl || !object || !body || !collider || !collider->IsValid() || !m_impl->HasCapacity()) {
+   if (!m_impl || !collider.IsValid() || !m_impl->HasCapacity() || m_impl->Find(object)) {
       return false;
    }
-   body->object = object;
-   UpdateAutomaticInertia(body, collider->LocalAABB());
    PhysicsSceneEntry &entry = m_impl->Append();
-   entry.object             = object;
-   entry.body               = body;
-   entry.collider           = collider;
+   entry.object             = &object;
+   entry.properties         = nullptr;
+   entry.collider           = &collider;
+   entry.kind               = ColliderEntryKind::Mesh;
+   entry.runtime            = PhysicsRuntimeState();
+   return true;
+}
+
+bool PhysicsScene::AddDynamicBody(GameObject &object, BoxCollider &collider,
+                                  PhysicsProperties &properties)
+{
+   if (!m_impl || !collider.IsValid() || !m_impl->HasCapacity() || m_impl->Find(object)) {
+      return false;
+   }
+   PhysicsSceneEntry &entry = m_impl->Append();
+   entry.object             = &object;
+   entry.properties         = &properties;
+   entry.collider           = &collider;
    entry.kind               = ColliderEntryKind::Box;
+   entry.runtime            = PhysicsRuntimeState();
    return true;
 }
 
-bool PhysicsScene::AddBody(GameObject *object, PhysicsBody *body, ConvexCollider *collider)
+bool PhysicsScene::AddDynamicBody(GameObject &object, ConvexCollider &collider,
+                                  PhysicsProperties &properties)
 {
-   if (!m_impl || !object || !body || !collider || !collider->IsValid() || !m_impl->HasCapacity()) {
+   if (!m_impl || !collider.IsValid() || !m_impl->HasCapacity() || m_impl->Find(object)) {
       return false;
    }
-   body->object = object;
-   UpdateAutomaticInertia(body, collider->LocalAABB());
    PhysicsSceneEntry &entry = m_impl->Append();
-   entry.object             = object;
-   entry.body               = body;
-   entry.collider           = collider;
+   entry.object             = &object;
+   entry.properties         = &properties;
+   entry.collider           = &collider;
    entry.kind               = ColliderEntryKind::Convex;
+   entry.runtime            = PhysicsRuntimeState();
    return true;
 }
 
-bool PhysicsScene::AddStatic(GameObject *object, StaticMeshCollider *collider)
+bool PhysicsScene::RemoveBody(GameObject &object)
 {
-   if (!m_impl || !object || !collider || !collider->IsValid() || !m_impl->HasCapacity()) {
+   if (!m_impl) {
       return false;
    }
-   PhysicsSceneEntry &entry = m_impl->Append();
-   entry.object             = object;
-   entry.body               = nullptr;
-   entry.collider           = collider;
-   entry.kind               = ColliderEntryKind::StaticMesh;
+   for (int32_t i = 0; i < m_impl->entryCount; i++) {
+      if (m_impl->entries[i].object == &object) {
+         for (int32_t j = i; j < m_impl->entryCount - 1; j++) {
+            m_impl->entries[j] = m_impl->entries[j + 1];
+         }
+         m_impl->entryCount--;
+         m_impl->entries[m_impl->entryCount] = PhysicsSceneEntry();
+         return true;
+      }
+   }
+   return false;
+}
+
+bool PhysicsScene::RefreshCollider(GameObject &object)
+{
+   PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
+   if (!entry) {
+      return false;
+   }
+   if (entry->kind == ColliderEntryKind::Mesh) {
+      static_cast<MeshCollider *>(entry->collider)->Refresh();
+      return static_cast<MeshCollider *>(entry->collider)->IsValid();
+   }
    return true;
 }
 
-static void IntegrateSceneBody(GameObject *object, PhysicsBody *body, float deltaTime,
-                               float sceneDrag)
+bool PhysicsScene::HasBody(const GameObject &object) const
 {
-   if (!object || !body || !body->IsEnabled() || deltaTime <= 0.0f) {
+   return m_impl && m_impl->Find(object);
+}
+
+bool PhysicsScene::IsDynamicBody(const GameObject &object) const
+{
+   const PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
+   return entry && IsDynamicKind(entry->kind);
+}
+
+void PhysicsScene::SetGravity(float3 value)
+{
+   if (m_impl) {
+      m_impl->gravity = value;
+   }
+}
+
+float3 PhysicsScene::GetGravity() const { return m_impl ? m_impl->gravity : float3(0, 0, 0); }
+
+float3 PhysicsScene::GetVelocity(const GameObject &object) const
+{
+   const PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
+   return entry && IsDynamicKind(entry->kind) ? entry->runtime.velocity : float3(0, 0, 0);
+}
+
+float3 PhysicsScene::GetAngularVelocity(const GameObject &object) const
+{
+   const PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
+   return entry && IsDynamicKind(entry->kind) ? entry->runtime.angularVelocity : float3(0, 0, 0);
+}
+
+bool PhysicsScene::SetVelocity(GameObject &object, const float3 &velocity)
+{
+   PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
+   if (!entry || !IsDynamicKind(entry->kind)) {
+      return false;
+   }
+   entry->runtime.velocity = velocity;
+   return true;
+}
+
+bool PhysicsScene::SetAngularVelocity(GameObject &object, const float3 &angularVelocity)
+{
+   PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
+   if (!entry || !IsDynamicKind(entry->kind)) {
+      return false;
+   }
+   entry->runtime.angularVelocity = angularVelocity;
+   return true;
+}
+
+bool PhysicsScene::AddForce(GameObject &object, const float3 &force)
+{
+   PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
+   if (!entry || !IsDynamicKind(entry->kind)) {
+      return false;
+   }
+   entry->runtime.force = entry->runtime.force + force;
+   return true;
+}
+
+bool PhysicsScene::AddTorque(GameObject &object, const float3 &torque)
+{
+   PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
+   if (!entry || !IsDynamicKind(entry->kind)) {
+      return false;
+   }
+   entry->runtime.torque = entry->runtime.torque + torque;
+   return true;
+}
+
+bool PhysicsScene::AddImpulse(GameObject &object, const float3 &impulse)
+{
+   PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
+   if (!entry || !IsDynamicKind(entry->kind)) {
+      return false;
+   }
+   entry->runtime.velocity = entry->runtime.velocity + impulse * InverseMass(entry);
+   return true;
+}
+
+bool PhysicsScene::AddAngularImpulse(GameObject &object, const float3 &impulse)
+{
+   PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
+   if (!entry || !IsDynamicKind(entry->kind)) {
+      return false;
+   }
+   entry->runtime.angularVelocity =
+       entry->runtime.angularVelocity + impulse * InverseInertia(entry);
+   return true;
+}
+
+static void IntegrateSceneEntry(PhysicsSceneEntry &entry, float deltaTime, float sceneDrag,
+                                float3 gravity)
+{
+   if (!entry.object || !entry.properties || !IsDynamicKind(entry.kind) || deltaTime <= 0.0f) {
       return;
    }
 
-   float3 totalForce     = body->force + body->gravity * body->mass;
-   float3 totalTorque    = body->torque;
-   body->velocity        = body->velocity + totalForce * body->inverseMass * deltaTime;
-   body->angularVelocity = body->angularVelocity + totalTorque * body->inverseInertia * deltaTime;
+   float  inverseMass     = InverseMass(&entry);
+   float  inverseInertia  = InverseInertia(&entry);
+   float3 totalForce      = entry.runtime.force + gravity * entry.properties->GetMass();
+   entry.runtime.velocity = entry.runtime.velocity + totalForce * inverseMass * deltaTime;
+   entry.runtime.angularVelocity =
+       entry.runtime.angularVelocity + entry.runtime.torque * inverseInertia * deltaTime;
 
-   if (body->damping > 0.0f) {
-      float damp = 1.0f - body->damping * deltaTime;
+   if (entry.properties->GetDamping() > 0.0f) {
+      float damp = 1.0f - entry.properties->GetDamping() * deltaTime;
       if (damp < 0.0f) damp = 0.0f;
-      body->velocity        = body->velocity * damp;
-      body->angularVelocity = body->angularVelocity * damp;
+      entry.runtime.velocity        = entry.runtime.velocity * damp;
+      entry.runtime.angularVelocity = entry.runtime.angularVelocity * damp;
    }
 
    if (sceneDrag > 0.0f) {
       float dragScale = 1.0f - sceneDrag * deltaTime;
       if (dragScale < 0.0f) dragScale = 0.0f;
-      body->velocity        = body->velocity * dragScale;
-      body->angularVelocity = body->angularVelocity * dragScale;
+      entry.runtime.velocity        = entry.runtime.velocity * dragScale;
+      entry.runtime.angularVelocity = entry.runtime.angularVelocity * dragScale;
    }
 
-   object->position = object->position + body->velocity * deltaTime;
-   quat dq =
-       quat(1.0f, 0.5f * body->angularVelocity.x * deltaTime,
-            0.5f * body->angularVelocity.y * deltaTime, 0.5f * body->angularVelocity.z * deltaTime);
-   object->orientation = (object->orientation * dq).normalizeFast();
+   entry.object->position    = entry.object->position + entry.runtime.velocity * deltaTime;
+   quat dq                   = quat(1.0f, 0.5f * entry.runtime.angularVelocity.x * deltaTime,
+                                    0.5f * entry.runtime.angularVelocity.y * deltaTime,
+                                    0.5f * entry.runtime.angularVelocity.z * deltaTime);
+   entry.object->orientation = (entry.object->orientation * dq).normalizeFast();
 }
 
-static float BodyInverseMass(const PhysicsBody *body)
+static float3 EntryVelocityAtPoint(const PhysicsSceneEntry *entry, float3 point)
 {
-   return body && body->IsEnabled() ? body->inverseMass : 0.0f;
-}
-
-static float BodyInverseInertia(const PhysicsBody *body)
-{
-   return body && body->IsEnabled() ? body->inverseInertia : 0.0f;
-}
-
-static float3 BodyVelocityAtPoint(const GameObject *object, const PhysicsBody *body, float3 point)
-{
-   if (!object || !body || !body->IsEnabled()) {
+   if (!entry || !entry->object || !IsDynamicKind(entry->kind)) {
       return {0, 0, 0};
    }
-   float3 r = point - object->position;
-   return body->velocity + float3::cross(body->angularVelocity, r);
+   float3 r = point - entry->object->position;
+   return entry->runtime.velocity + float3::cross(entry->runtime.angularVelocity, r);
 }
 
-static void ApplySceneImpulse(GameObject *object, PhysicsBody *body, float3 point, float3 impulse)
+static void ApplySceneImpulse(PhysicsSceneEntry *entry, float3 point, float3 impulse)
 {
-   if (!object || !body || !body->IsEnabled()) {
+   if (!entry || !entry->object || !IsDynamicKind(entry->kind)) {
       return;
    }
-   body->velocity        = body->velocity + impulse * body->inverseMass;
-   float3 r              = point - object->position;
-   body->angularVelocity = body->angularVelocity + float3::cross(r, impulse) * body->inverseInertia;
+   entry->runtime.velocity = entry->runtime.velocity + impulse * InverseMass(entry);
+   float3 r                = point - entry->object->position;
+   entry->runtime.angularVelocity =
+       entry->runtime.angularVelocity + float3::cross(r, impulse) * InverseInertia(entry);
 }
 
-static void ResolveSceneContact(GameObject *objectA, PhysicsBody *bodyA, GameObject *objectB,
-                                PhysicsBody *bodyB, const InternalContact &contact)
+static void ResolveSceneContact(PhysicsSceneEntry &entryA, PhysicsSceneEntry &entryB,
+                                const InternalContact &contact)
 {
    if (!contact.hit || contact.penetration <= 0.0f) {
       return;
    }
 
-   float invMassA   = BodyInverseMass(bodyA);
-   float invMassB   = BodyInverseMass(bodyB);
+   float invMassA   = InverseMass(&entryA);
+   float invMassB   = InverseMass(&entryB);
    float invMassSum = invMassA + invMassB;
    if (invMassSum <= 0.0f) {
       return;
@@ -272,28 +419,28 @@ static void ResolveSceneContact(GameObject *objectA, PhysicsBody *bodyA, GameObj
    if (correctionDepth > 0.0f) {
       float  correctionMagnitude = correctionDepth * 0.6f / invMassSum;
       float3 correction          = contact.normal * correctionMagnitude;
-      if (objectA) {
-         objectA->position = objectA->position + correction * invMassA;
+      if (entryA.object) {
+         entryA.object->position = entryA.object->position + correction * invMassA;
       }
-      if (objectB) {
-         objectB->position = objectB->position - correction * invMassB;
+      if (entryB.object) {
+         entryB.object->position = entryB.object->position - correction * invMassB;
       }
    }
 
-   float3 relativeVelocity = BodyVelocityAtPoint(objectA, bodyA, contact.point) -
-                             BodyVelocityAtPoint(objectB, bodyB, contact.point);
-   float  normalVelocity   = float3::dot(relativeVelocity, contact.normal);
+   float3 relativeVelocity =
+       EntryVelocityAtPoint(&entryA, contact.point) - EntryVelocityAtPoint(&entryB, contact.point);
+   float normalVelocity = float3::dot(relativeVelocity, contact.normal);
 
    float inertiaTerm = invMassSum;
-   if (objectA) {
-      float3 ra       = contact.point - objectA->position;
+   if (entryA.object) {
+      float3 ra       = contact.point - entryA.object->position;
       float3 raCrossN = float3::cross(ra, contact.normal);
-      inertiaTerm += raCrossN.lengthSq() * BodyInverseInertia(bodyA);
+      inertiaTerm += raCrossN.lengthSq() * InverseInertia(&entryA);
    }
-   if (objectB) {
-      float3 rb       = contact.point - objectB->position;
+   if (entryB.object) {
+      float3 rb       = contact.point - entryB.object->position;
       float3 rbCrossN = float3::cross(rb, contact.normal);
-      inertiaTerm += rbCrossN.lengthSq() * BodyInverseInertia(bodyB);
+      inertiaTerm += rbCrossN.lengthSq() * InverseInertia(&entryB);
    }
    if (inertiaTerm <= 0.000001f) {
       return;
@@ -301,23 +448,23 @@ static void ResolveSceneContact(GameObject *objectA, PhysicsBody *bodyA, GameObj
 
    float impulseMagnitude = 0.0f;
    if (normalVelocity < 0.0f) {
-      float restitutionA = bodyA ? bodyA->restitution : 0.0f;
-      float restitutionB = bodyB ? bodyB->restitution : 0.0f;
+      float restitutionA = entryA.properties ? entryA.properties->GetRestitution() : 0.0f;
+      float restitutionB = entryB.properties ? entryB.properties->GetRestitution() : 0.0f;
       float restitution  = restitutionA > restitutionB ? restitutionA : restitutionB;
       if (-normalVelocity < 0.35f) {
          restitution = 0.0f;
       }
       impulseMagnitude     = -((1.0f + restitution) * normalVelocity) / inertiaTerm;
       float3 normalImpulse = contact.normal * impulseMagnitude;
-      ApplySceneImpulse(objectA, bodyA, contact.point, normalImpulse);
-      ApplySceneImpulse(objectB, bodyB, contact.point, -normalImpulse);
+      ApplySceneImpulse(&entryA, contact.point, normalImpulse);
+      ApplySceneImpulse(&entryB, contact.point, -normalImpulse);
    }
 
-   float frictionA        = bodyA ? bodyA->friction : 0.5f;
-   float frictionB        = bodyB ? bodyB->friction : 0.5f;
-   float friction         = (frictionA + frictionB) * 0.5f;
-   relativeVelocity       = BodyVelocityAtPoint(objectA, bodyA, contact.point) -
-                            BodyVelocityAtPoint(objectB, bodyB, contact.point);
+   float frictionA = entryA.properties ? entryA.properties->GetFriction() : 0.5f;
+   float frictionB = entryB.properties ? entryB.properties->GetFriction() : 0.5f;
+   float friction  = (frictionA + frictionB) * 0.5f;
+   relativeVelocity =
+       EntryVelocityAtPoint(&entryA, contact.point) - EntryVelocityAtPoint(&entryB, contact.point);
    float  normalComponent = float3::dot(relativeVelocity, contact.normal);
    float3 tangent         = relativeVelocity - contact.normal * normalComponent;
    if (tangent.lengthSq() > 0.000001f) {
@@ -329,8 +476,8 @@ static void ResolveSceneContact(GameObject *objectA, PhysicsBody *bodyA, GameObj
       if (frictionMagnitude > maxFriction) frictionMagnitude = maxFriction;
       if (frictionMagnitude < -maxFriction) frictionMagnitude = -maxFriction;
       float3 frictionImpulse = tangent * frictionMagnitude;
-      ApplySceneImpulse(objectA, bodyA, contact.point, frictionImpulse);
-      ApplySceneImpulse(objectB, bodyB, contact.point, -frictionImpulse);
+      ApplySceneImpulse(&entryA, contact.point, frictionImpulse);
+      ApplySceneImpulse(&entryB, contact.point, -frictionImpulse);
    }
 }
 
@@ -361,8 +508,8 @@ static bool TryBuildContactShape(const PhysicsSceneEntry &entry, InternalContact
       return true;
    }
 
-   if (entry.kind == ColliderEntryKind::StaticMesh) {
-      StaticMeshCollider *collider = static_cast<StaticMeshCollider *>(entry.collider);
+   if (entry.kind == ColliderEntryKind::Mesh) {
+      MeshCollider *collider = static_cast<MeshCollider *>(entry.collider);
       if (!collider->IsValid()) {
          return false;
       }
@@ -394,7 +541,7 @@ class PhysicsStepper
    static void IntegrateBodies(PhysicsSceneState *scene, float sceneDrag, float deltaTime)
    {
       for (int32_t i = 0; i < scene->entryCount; i++) {
-         IntegrateSceneBody(scene->entries[i].object, scene->entries[i].body, deltaTime, sceneDrag);
+         IntegrateSceneEntry(scene->entries[i], deltaTime, sceneDrag, scene->gravity);
       }
    }
 
@@ -411,7 +558,7 @@ class PhysicsStepper
 
    static void ResolveEntryPair(PhysicsSceneEntry &entryA, PhysicsSceneEntry &entryB)
    {
-      if (!entryA.body && !entryB.body) {
+      if (!IsDynamicKind(entryA.kind) && !IsDynamicKind(entryB.kind)) {
          return;
       }
 
@@ -424,16 +571,16 @@ class PhysicsStepper
       InternalContact contacts[8];
       int32_t         count = GenerateInternalContacts(shapeA, shapeB, contacts, 8);
       for (int32_t c = 0; c < count; c++) {
-         ResolveSceneContact(entryA.object, entryA.body, entryB.object, entryB.body, contacts[c]);
+         ResolveSceneContact(entryA, entryB, contacts[c]);
       }
    }
 
    static void ClearBodyAccumulators(PhysicsSceneState *scene)
    {
       for (int32_t i = 0; i < scene->entryCount; i++) {
-         if (scene->entries[i].body) {
-            scene->entries[i].body->ClearForces();
-            scene->entries[i].body->ClearTorques();
+         if (IsDynamicKind(scene->entries[i].kind)) {
+            scene->entries[i].runtime.force  = {0, 0, 0};
+            scene->entries[i].runtime.torque = {0, 0, 0};
          }
       }
    }

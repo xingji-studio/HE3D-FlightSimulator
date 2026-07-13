@@ -167,13 +167,49 @@ AABB BoxCollider::LocalAABB() const
    return m_valid ? AABB(-m_halfExtents, m_halfExtents) : AABB({0, 0, 0}, {0, 0, 0});
 }
 
+static float EstimateBoundsInertia(AABB bounds, float mass)
+{
+   if (mass <= 0.0f) {
+      return 0.0f;
+   }
+   float3 size = bounds.max - bounds.min;
+   if (size.x < 0.001f) size.x = 0.001f;
+   if (size.y < 0.001f) size.y = 0.001f;
+   if (size.z < 0.001f) size.z = 0.001f;
+   float ix = mass * (size.y * size.y + size.z * size.z) / 12.0f;
+   float iy = mass * (size.x * size.x + size.z * size.z) / 12.0f;
+   float iz = mass * (size.x * size.x + size.y * size.y) / 12.0f;
+   return (ix + iy + iz) / 3.0f;
+}
+
+static float EstimateBoundsDamping(AABB bounds, float mass)
+{
+   float3 size     = bounds.max - bounds.min;
+   float  area     = HE3D_MAX(size.x * size.y, HE3D_MAX(size.x * size.z, size.y * size.z));
+   float  safeMass = mass > 0.001f ? mass : 1.0f;
+   float  value    = area / safeMass * 0.02f;
+   if (value < 0.0f) value = 0.0f;
+   if (value > 1.0f) value = 1.0f;
+   return value;
+}
+
+float BoxCollider::EstimateInertia(float mass) const
+{
+   return EstimateBoundsInertia(LocalAABB(), mass);
+}
+
+float BoxCollider::EstimateDamping(float mass) const
+{
+   return EstimateBoundsDamping(LocalAABB(), mass);
+}
+
 ConvexCollider::ConvexCollider()
     : m_vertices(nullptr), m_vertexCount(0), m_faceAxes(nullptr), m_faceAxisCount(0),
       m_edgeAxes(nullptr), m_edgeAxisCount(0), m_localBounds(), m_valid(false)
 {
 }
 
-ConvexCollider::ConvexCollider(const Mesh *mesh) : ConvexCollider() { BuildFromMesh(mesh); }
+ConvexCollider::ConvexCollider(const Mesh &mesh) : ConvexCollider() { BuildFromMesh(mesh); }
 
 ConvexCollider::~ConvexCollider() { Clear(); }
 
@@ -211,31 +247,33 @@ static bool AddUniqueDirection(float3 *directions, int32_t *count, int32_t capac
    return true;
 }
 
-bool ConvexCollider::BuildFromMesh(const Mesh *mesh)
+bool ConvexCollider::BuildFromMesh(const Mesh &mesh)
 {
    Clear();
-   if (!mesh || !mesh->vertices || mesh->vertCount < 12 || (mesh->vertCount % 3) != 0) {
+   if (!mesh.IsValid() || mesh.GetVertexCount() < 12 || (mesh.GetVertexCount() % 3) != 0) {
       return false;
    }
 
-   m_vertices = new float3[mesh->vertCount];
-   m_faceAxes = new float3[mesh->vertCount / 3];
-   m_edgeAxes = new float3[mesh->vertCount];
+   const int32_t meshVertexCount = mesh.GetVertexCount();
+   const float3 *meshVertices    = mesh.GetVertices();
+   m_vertices                    = new float3[meshVertexCount];
+   m_faceAxes                    = new float3[meshVertexCount / 3];
+   m_edgeAxes                    = new float3[meshVertexCount];
    if (!m_vertices || !m_faceAxes || !m_edgeAxes) {
       Clear();
       return false;
    }
 
-   for (int32_t i = 0; i < mesh->vertCount; i++) {
+   for (int32_t i = 0; i < meshVertexCount; i++) {
       bool duplicate = false;
       for (int32_t j = 0; j < m_vertexCount; j++) {
-         if (PointsNear(mesh->vertices[i], m_vertices[j])) {
+         if (PointsNear(meshVertices[i], m_vertices[j])) {
             duplicate = true;
             break;
          }
       }
       if (!duplicate) {
-         m_vertices[m_vertexCount++] = mesh->vertices[i];
+         m_vertices[m_vertexCount++] = meshVertices[i];
       }
    }
    if (m_vertexCount < 4) {
@@ -256,10 +294,10 @@ bool ConvexCollider::BuildFromMesh(const Mesh *mesh)
       return false;
    }
 
-   for (int32_t triangle = 0; triangle < mesh->vertCount; triangle += 3) {
-      float3 a      = mesh->vertices[triangle];
-      float3 b      = mesh->vertices[triangle + 1];
-      float3 c      = mesh->vertices[triangle + 2];
+   for (int32_t triangle = 0; triangle < meshVertexCount; triangle += 3) {
+      float3 a      = meshVertices[triangle];
+      float3 b      = meshVertices[triangle + 1];
+      float3 c      = meshVertices[triangle + 2];
       float3 normal = float3::cross(b - a, c - a);
       if (normal.lengthSq() <= 0.0000001f) {
          Clear();
@@ -271,10 +309,10 @@ bool ConvexCollider::BuildFromMesh(const Mesh *mesh)
          normal = -normal;
       }
 
-      if (!AddUniqueDirection(m_faceAxes, &m_faceAxisCount, mesh->vertCount / 3, normal) ||
-          !AddUniqueDirection(m_edgeAxes, &m_edgeAxisCount, mesh->vertCount, b - a) ||
-          !AddUniqueDirection(m_edgeAxes, &m_edgeAxisCount, mesh->vertCount, c - b) ||
-          !AddUniqueDirection(m_edgeAxes, &m_edgeAxisCount, mesh->vertCount, a - c)) {
+      if (!AddUniqueDirection(m_faceAxes, &m_faceAxisCount, meshVertexCount / 3, normal) ||
+          !AddUniqueDirection(m_edgeAxes, &m_edgeAxisCount, meshVertexCount, b - a) ||
+          !AddUniqueDirection(m_edgeAxes, &m_edgeAxisCount, meshVertexCount, c - b) ||
+          !AddUniqueDirection(m_edgeAxes, &m_edgeAxisCount, meshVertexCount, a - c)) {
          Clear();
          return false;
       }
@@ -294,36 +332,53 @@ AABB ConvexCollider::LocalAABB() const
    return m_valid ? m_localBounds : AABB({0, 0, 0}, {0, 0, 0});
 }
 
-StaticMeshCollider::StaticMeshCollider() : m_mesh(nullptr), m_localBounds(), m_valid(false) {}
-
-StaticMeshCollider::StaticMeshCollider(const Mesh *mesh) : StaticMeshCollider()
+float ConvexCollider::EstimateInertia(float mass) const
 {
-   BuildFromMesh(mesh);
+   return EstimateBoundsInertia(LocalAABB(), mass);
 }
 
-bool StaticMeshCollider::BuildFromMesh(const Mesh *mesh)
+float ConvexCollider::EstimateDamping(float mass) const
 {
-   m_mesh        = nullptr;
+   return EstimateBoundsDamping(LocalAABB(), mass);
+}
+
+MeshCollider::MeshCollider(const Mesh &mesh) : m_mesh(&mesh), m_localBounds(), m_valid(false)
+{
+   Refresh();
+}
+
+void MeshCollider::Refresh()
+{
    m_localBounds = AABB();
    m_valid       = false;
-   if (!mesh || !mesh->vertices || mesh->vertCount < 3 || (mesh->vertCount % 3) != 0) {
-      return false;
+   if (!m_mesh || !m_mesh->IsValid() || m_mesh->GetVertexCount() < 3 ||
+       (m_mesh->GetVertexCount() % 3) != 0) {
+      return;
    }
 
-   m_localBounds = AABB(mesh->vertices[0], mesh->vertices[0]);
-   for (int32_t i = 1; i < mesh->vertCount; i++) {
-      IncludePoint(m_localBounds, mesh->vertices[i]);
+   const float3 *vertices = m_mesh->GetVertices();
+   m_localBounds          = AABB(vertices[0], vertices[0]);
+   for (int32_t i = 1; i < m_mesh->GetVertexCount(); i++) {
+      IncludePoint(m_localBounds, vertices[i]);
    }
-   m_mesh  = mesh;
    m_valid = true;
-   return true;
 }
 
-bool StaticMeshCollider::IsValid() const { return m_valid; }
+bool MeshCollider::IsValid() const { return m_valid; }
 
-AABB StaticMeshCollider::LocalAABB() const
+AABB MeshCollider::LocalAABB() const
 {
    return m_valid ? m_localBounds : AABB({0, 0, 0}, {0, 0, 0});
+}
+
+float MeshCollider::EstimateInertia(float mass) const
+{
+   return EstimateBoundsInertia(LocalAABB(), mass);
+}
+
+float MeshCollider::EstimateDamping(float mass) const
+{
+   return EstimateBoundsDamping(LocalAABB(), mass);
 }
 
 InternalContactShape Detail::ColliderAccess::From(const GameObject  &object,
@@ -364,16 +419,16 @@ InternalContactShape Detail::ColliderAccess::From(const GameObject     &object,
    return shape;
 }
 
-InternalContactShape Detail::ColliderAccess::From(const GameObject         &object,
-                                                  const StaticMeshCollider &collider)
+InternalContactShape Detail::ColliderAccess::From(const GameObject   &object,
+                                                  const MeshCollider &collider)
 {
    InternalContactShape shape;
    shape.kind          = InternalShapeKind::StaticMesh;
    shape.object        = &object;
    shape.localCenter   = (collider.m_localBounds.min + collider.m_localBounds.max) * 0.5f;
    shape.halfExtents   = (collider.m_localBounds.max - collider.m_localBounds.min) * 0.5f;
-   shape.vertices      = collider.m_mesh ? collider.m_mesh->vertices : nullptr;
-   shape.vertexCount   = collider.m_mesh ? collider.m_mesh->vertCount : 0;
+   shape.vertices      = collider.m_mesh ? collider.m_mesh->GetVertices() : nullptr;
+   shape.vertexCount   = collider.m_mesh ? collider.m_mesh->GetVertexCount() : 0;
    shape.faceAxes      = nullptr;
    shape.faceAxisCount = 0;
    shape.edgeAxes      = nullptr;
@@ -588,14 +643,15 @@ int32_t Detail::ContactPipeline::CollectStaticTriangles(const InternalContactSha
 
    InternalContact rawContacts[32];
    int32_t         rawCount = 0;
-   for (int32_t triangle = 0; triangle < staticShape.mesh->vertCount && rawCount < 32;
+   const float3   *vertices = staticShape.mesh->GetVertices();
+   for (int32_t triangle = 0; triangle < staticShape.mesh->GetVertexCount() && rawCount < 32;
         triangle += 3) {
-      float3 a = staticShape.object->position +
-                 staticShape.object->orientation.rotate(staticShape.mesh->vertices[triangle]);
+      float3 a =
+          staticShape.object->position + staticShape.object->orientation.rotate(vertices[triangle]);
       float3 b = staticShape.object->position +
-                 staticShape.object->orientation.rotate(staticShape.mesh->vertices[triangle + 1]);
+                 staticShape.object->orientation.rotate(vertices[triangle + 1]);
       float3 c = staticShape.object->position +
-                 staticShape.object->orientation.rotate(staticShape.mesh->vertices[triangle + 2]);
+                 staticShape.object->orientation.rotate(vertices[triangle + 2]);
       if (!TriangleWorldAabb(a, b, c).Intersects(queryBounds)) {
          continue;
       }

@@ -44,6 +44,10 @@ set(HE3D_CORE_SOURCES
     src/he3d_physics.cpp
 )
 
+set(HE3D_PRIVATE_INCLUDE_DIRS
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+)
+
 set(HE3D_FLIGHT_SOURCES
     examples/FlightSimulator/src/flight_sim.cpp
     examples/FlightSimulator/src/main.cpp
@@ -125,6 +129,30 @@ function(he3d_copy_example_assets target_name)
 endfunction()
 
 if(HE3D_BACKEND STREQUAL "XAPI")
+    set(XJ380_SDK_ROOT
+        ""
+        CACHE PATH
+        "Path to one matched XJ380 SDK/runtime root"
+    )
+
+    if(NOT XJ380_SDK_ROOT)
+        message(FATAL_ERROR
+            "XJ380_SDK_ROOT is required for HE3D_BACKEND=XAPI. "
+            "Pass -DXJ380_SDK_ROOT=/path/to/matched/xj380-sdk")
+    endif()
+
+    set(XJ380_GUI_RUNTIME_DIR
+        "${XJ380_SDK_ROOT}/obj-gui"
+        CACHE PATH
+        "Path to matched XJ380 GUI runtime objects"
+    )
+
+    if(NOT EXISTS "${XJ380_GUI_RUNTIME_DIR}")
+        message(FATAL_ERROR
+            "XJ380 GUI runtime objects not found at ${XJ380_GUI_RUNTIME_DIR}. "
+            "Set XJ380_GUI_RUNTIME_DIR only if it belongs to the same SDK root.")
+    endif()
+
     add_library(he3d_engine_xapi STATIC
         ${HE3D_CORE_SOURCES}
         src/platform/he3d_platform_xapi.cpp
@@ -134,7 +162,8 @@ if(HE3D_BACKEND STREQUAL "XAPI")
         PUBLIC
             ${CMAKE_CURRENT_SOURCE_DIR}/include
         PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/xj380/include
+            ${HE3D_PRIVATE_INCLUDE_DIRS}
+            ${XJ380_SDK_ROOT}/include
     )
 
     target_compile_options(he3d_engine_xapi
@@ -149,37 +178,6 @@ if(HE3D_BACKEND STREQUAL "XAPI")
         PUBLIC
             __XJ380_OS__
     )
-
-    set(XJ380_SDK_ROOT
-        "${CMAKE_CURRENT_SOURCE_DIR}/../XXCC-suite"
-        CACHE PATH
-        "Path to the XJ380 development suite"
-    )
-
-    set(XJ380_GUI_RUNTIME_DIR
-        ""
-        CACHE PATH
-        "Path to prebuilt XJ380 GUI runtime objects"
-    )
-    if(NOT XJ380_GUI_RUNTIME_DIR)
-        foreach(candidate
-                "${XJ380_SDK_ROOT}/obj-gui"
-                "${CMAKE_CURRENT_SOURCE_DIR}/../XJ380/out/xapi")
-            if(EXISTS "${candidate}")
-                set(XJ380_GUI_RUNTIME_DIR "${candidate}")
-                break()
-            endif()
-        endforeach()
-    endif()
-
-    if(NOT EXISTS "${XJ380_GUI_RUNTIME_DIR}")
-        message(FATAL_ERROR
-            "XJ380 GUI runtime objects not found. Checked: "
-            "${XJ380_SDK_ROOT}/obj-gui and "
-            "${CMAKE_CURRENT_SOURCE_DIR}/../XJ380/out/xapi. "
-            "Set XJ380_GUI_RUNTIME_DIR to override."
-        )
-    endif()
 
     file(GLOB_RECURSE XJ380_GUI_OBJECTS CONFIGURE_DEPENDS
         "${XJ380_GUI_RUNTIME_DIR}/*.o"
@@ -248,6 +246,8 @@ if(HE3D_BACKEND STREQUAL "SDL3")
         target_include_directories(he3d_engine_sdl3
             PUBLIC
                 ${CMAKE_CURRENT_SOURCE_DIR}/include
+            PRIVATE
+                ${HE3D_PRIVATE_INCLUDE_DIRS}
         )
 
         target_compile_definitions(he3d_engine_sdl3
@@ -307,6 +307,8 @@ if(HE3D_BACKEND STREQUAL "CONSOLE")
     target_include_directories(he3d_engine_console
         PUBLIC
             ${CMAKE_CURRENT_SOURCE_DIR}/include
+        PRIVATE
+            ${HE3D_PRIVATE_INCLUDE_DIRS}
     )
 
     target_compile_definitions(he3d_engine_console
@@ -361,11 +363,13 @@ if(HE3D_BUILD_TESTS)
     target_include_directories(he3d_public_api_tests
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${HE3D_PRIVATE_INCLUDE_DIRS}
     )
 
     target_compile_definitions(he3d_public_api_tests
         PRIVATE
             HE3D_BACKEND_CONSOLE
+            HE3D_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     )
 
     target_compile_options(he3d_public_api_tests
@@ -398,6 +402,7 @@ if(HE3D_BUILD_INTERNAL_TESTS)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include
             ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${HE3D_PRIVATE_INCLUDE_DIRS}
     )
 
     target_compile_definitions(he3d_internal_physics_tests

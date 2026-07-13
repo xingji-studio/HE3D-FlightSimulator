@@ -32,13 +32,14 @@ struct FlightControls {
 // One reusable terrain tile with a cached static mesh collider.
 // 一个带静态 mesh 碰撞缓存的可复用地形块。
 struct TerrainTile {
-   HE3D::GameObject         object;
-   HE3D::StaticMeshCollider collider;
-   int                      gridX;
-   int                      gridZ;
-   bool                     active;
+   HE3D::Mesh         mesh;
+   HE3D::GameObject   object;
+   HE3D::MeshCollider collider;
+   int                gridX;
+   int                gridZ;
+   bool               active;
 
-   TerrainTile() : object(), collider(), gridX(0), gridZ(0), active(false) {}
+   TerrainTile() : mesh(), object(mesh), collider(mesh), gridX(0), gridZ(0), active(false) {}
 };
 
 // Grid coordinate queued for terrain generation.
@@ -189,8 +190,8 @@ static void HandleToggleKeys(bool &fxaaKeyWasDown)
 
 // Update aircraft orientation from controls and write its forward velocity.
 // 根据控制输入更新飞机朝向，并写入向前飞行速度。
-static HE3D::float3 UpdateFlightControls(FlightControls &controls, HE3D::GameObject &plane,
-                                         HE3D::PhysicsBody &planeBody, float deltaTime)
+static HE3D::float3 UpdateFlightControls(FlightControls &controls, HE3D::PhysicsScene &scene,
+                                         HE3D::GameObject &plane, float deltaTime)
 {
    const float inputAcceleration = 4.5f;
    const float inputRecovery     = 2.5f;
@@ -213,7 +214,7 @@ static HE3D::float3 UpdateFlightControls(FlightControls &controls, HE3D::GameObj
 
    plane.orientation    = (yawDelta * plane.orientation * pitchDelta * rollDelta).normalizeFast();
    HE3D::float3 forward = plane.Forward();
-   planeBody.SetVelocity(forward * 15.0f);
+   scene.SetVelocity(plane, forward * 15.0f);
    return forward;
 }
 
@@ -293,16 +294,11 @@ static void RefreshNextTerrainTile(TerrainTile *tiles, int tileCount,
       tiles[i].gridZ = gridZ;
       float worldX   = tiles[i].gridX * tileSize;
       float worldZ   = tiles[i].gridZ * tileSize;
-      if (!tiles[i].object.mesh) {
-         tiles[i].object.mesh = CreatePlane(terrainGridCount, terrainStep, worldX, worldZ);
-      } else if (!UpdatePlaneMesh(tiles[i].object.mesh, terrainGridCount, terrainStep, worldX,
-                                  worldZ)) {
-         delete tiles[i].object.mesh;
-         tiles[i].object.mesh = CreatePlane(terrainGridCount, terrainStep, worldX, worldZ);
-      }
+      tiles[i].mesh  = CreatePlane(terrainGridCount, terrainStep, worldX, worldZ);
+      tiles[i].object.SetMesh(tiles[i].mesh);
       tiles[i].object.position = {worldX, 0.0f, worldZ};
-      tiles[i].active          = (tiles[i].object.mesh != nullptr) &&
-                                 tiles[i].collider.BuildFromMesh(tiles[i].object.mesh);
+      tiles[i].collider.Refresh();
+      tiles[i].active = tiles[i].mesh.IsValid() && tiles[i].collider.IsValid();
       break;
    }
 }
@@ -365,19 +361,20 @@ static void AddNearbyTerrainColliders(HE3D::PhysicsScene &worldScene, TerrainTil
 
    for (int i = 0; i < maxColliderCount; i++) {
       if (bestIndices[i] >= 0) {
-         worldScene.AddStatic(&tiles[bestIndices[i]].object, &tiles[bestIndices[i]].collider);
+         worldScene.AddStaticBody(tiles[bestIndices[i]].object, tiles[bestIndices[i]].collider);
       }
    }
 }
 
 // Rebuild the small per-frame physics scene for the aircraft and nearby terrain.
 // 为飞机和附近地形重建小型逐帧物理场景。
-static void BuildPhysicsScene(HE3D::PhysicsScene &worldScene, HE3D::PhysicsBody &planeBody,
+static void BuildPhysicsScene(HE3D::PhysicsScene      &worldScene,
+                              HE3D::PhysicsProperties &planeProperties,
                               HE3D::BoxCollider &planeCollider, HE3D::GameObject &plane,
                               TerrainTile *tiles, int tileCount, const HE3D::float3 &planePosition)
 {
    worldScene.Clear();
-   worldScene.AddBody(&plane, &planeBody, &planeCollider);
+   worldScene.AddDynamicBody(plane, planeCollider, planeProperties);
    AddNearbyTerrainColliders(worldScene, tiles, tileCount, planePosition);
 }
 
@@ -406,7 +403,7 @@ static void UpdateCamera(HE3D::Camera &camera, float &cameraYaw, const HE3D::Gam
 // Draw active terrain tiles and then draw the aircraft.
 // 绘制活动地形块，然后绘制飞机。
 static void DrawScene(HE3D::Renderer &renderer, TerrainTile *tiles, int tileCount,
-                      const HE3D::GameObject &plane, const HE3D::Texture *planeTexture,
+                      const HE3D::GameObject &plane, const HE3D::Texture &planeTexture,
                       bool hasPlaneTexture, const HE3D::Camera &camera, float tileSize)
 {
    renderer.Clear(HE3D::color3(0.45f, 0.75f, 1.0f));
@@ -414,7 +411,7 @@ static void DrawScene(HE3D::Renderer &renderer, TerrainTile *tiles, int tileCoun
    HE3D::color3 terrainColor = {0.3f, 0.7f, 0.3f};
    float        drawRadiusSq = (tileSize * 1.45f) * (tileSize * 1.45f);
    for (int i = 0; i < tileCount; i++) {
-      if (!tiles[i].active || !tiles[i].object.mesh) {
+      if (!tiles[i].active || !tiles[i].mesh.IsValid()) {
          continue;
       }
       HE3D::float3 tileDelta = tiles[i].object.position - camera.position;
@@ -425,7 +422,7 @@ static void DrawScene(HE3D::Renderer &renderer, TerrainTile *tiles, int tileCoun
    }
 
    if (hasPlaneTexture) {
-      renderer.DrawGameObject(plane, camera, *planeTexture);
+      renderer.DrawGameObject(plane, camera, planeTexture);
    } else {
       renderer.DrawGameObject(plane, camera, HE3D::color3(0.8f, 0.2f, 0.2f));
    }
@@ -466,30 +463,28 @@ int main(int argc, char **argv, char **envp)
    camera.fov      = 90.0f;
    camera.position = {0.0f, 12.0f, 5.0f};
 
-   HE3D::GameObject plane;
-   plane.mesh = HE3D::Mesh::LoadOBJ("biplane.obj");
-   if (!plane.mesh) {
-      plane.mesh = HE3D::Mesh::Create(flightFallbackAircraftVertices, flightFallbackAircraftUvs,
-                                      flightFallbackAircraftVertexCount);
+   HE3D::Mesh planeMesh = HE3D::Mesh::LoadOBJ("biplane.obj");
+   if (!planeMesh.IsValid()) {
+      planeMesh = HE3D::Mesh::Create(flightFallbackAircraftVertices, flightFallbackAircraftUvs,
+                                     flightFallbackAircraftVertexCount);
    }
-   if (!plane.mesh) {
+   if (!planeMesh.IsValid()) {
       HE3D::DestroyWindow(window);
       return 1;
    }
+   HE3D::GameObject plane(planeMesh);
    plane.position = {0.0f, 13.0f, 0.0f};
 
-   HE3D::Texture *planeTexture    = HE3D::Texture::LoadBMP("biplane.bmp");
-   bool           hasPlaneTexture = (planeTexture && planeTexture->valid);
+   HE3D::Texture planeTexture    = HE3D::Texture::LoadImage("biplane.bmp");
+   bool          hasPlaneTexture = planeTexture.IsValid();
 
-   HE3D::PhysicsBody planeBody(&plane);
-   HE3D::BoxCollider planeCollider(1.0f, 0.45f, 1.4f);
-   planeBody.SetEnabled(true);
-   planeBody.SetMass(1.0f);
-   planeBody.SetInertia(1.0f);
-   planeBody.gravity     = {0.0f, -100.0f, 0.0f};
-   planeBody.restitution = 0.1f;
-   planeBody.friction    = 0.5f;
-   planeBody.damping     = 0.1f;
+   HE3D::BoxCollider       planeCollider(1.0f, 0.45f, 1.4f);
+   HE3D::PhysicsProperties planeProperties;
+   planeProperties.SetMass(1.0f);
+   planeProperties.SetInertia(planeCollider.EstimateInertia(planeProperties.GetMass()));
+   planeProperties.SetRestitution(0.1f);
+   planeProperties.SetFriction(0.5f);
+   planeProperties.SetDamping(0.1f);
 
    const int   tileRadius       = 1;
    const float terrainStep      = 12.0f;
@@ -507,6 +502,7 @@ int main(int argc, char **argv, char **envp)
 
    HE3D::PhysicsScene worldScene(tileCount + 1);
    worldScene.drag = 0.02f;
+   worldScene.SetGravity({0.0f, -100.0f, 0.0f});
 
    HE3D::DirectionalLight sun;
    sun.direction = {1.0f, 1.0f, 0.5f};
@@ -534,14 +530,14 @@ int main(int argc, char **argv, char **envp)
       }
 
       HandleToggleKeys(fxaaKeyWasDown);
-      HE3D::float3 forward = UpdateFlightControls(controls, plane, planeBody, deltaTime);
+      BuildPhysicsScene(worldScene, planeProperties, planeCollider, plane, tiles, tileCount,
+                        plane.position);
+      HE3D::float3 forward = UpdateFlightControls(controls, worldScene, plane, deltaTime);
 
       UpdateTerrainTiles(tiles, tileCount, pendingTiles, pendingCount, pendingCursor,
                          terrainCenterX, terrainCenterZ, terrainDirty, plane.position, tileRadius,
                          terrainGridCount, terrainStep, tileSize);
 
-      BuildPhysicsScene(worldScene, planeBody, planeCollider, plane, tiles, tileCount,
-                        plane.position);
       worldScene.Step(deltaTime, 1);
 
       UpdateCamera(camera, cameraYaw, plane, forward, cameraOffset, deltaTime);
@@ -558,11 +554,6 @@ int main(int argc, char **argv, char **envp)
       HE3D::PaceFrame(frameStart);
    }
 
-   delete plane.mesh;
-   delete planeTexture;
-   for (int i = 0; i < tileCount; i++) {
-      delete tiles[i].object.mesh;
-   }
    HE3D::DestroyWindow(window);
    return 0;
 }
