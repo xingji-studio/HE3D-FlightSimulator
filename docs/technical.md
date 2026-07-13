@@ -45,3 +45,12 @@
 ```bash
 cmake -S . -B build-xapi -DHE3D_BACKEND=XAPI -DXJ380_SDK_ROOT=/path/to/sdk
 ```
+
+如果开发机器安装了 XSWL-C，可以显式运行 XAPI smoke test：
+
+```bash
+SDL_VIDEODRIVER=dummy timeout 3s /path/to/XSWL-C/build/xswl --nodebug \
+  build-xapi/he3d_triangle_test.elf
+```
+
+交互示例在 `timeout` 后退出属于预期；关键是 timeout 前能成功启动。
