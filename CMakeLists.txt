@@ -41,6 +41,7 @@ endif()
 set(HE3D_CORE_SOURCES
     src/he3d.cpp
     src/he3d_collider.cpp
+    src/he3d_gltf.cpp
     src/he3d_physics.cpp
 )
 

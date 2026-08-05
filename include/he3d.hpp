@@ -70,9 +70,10 @@ class Mesh
    static Mesh Create(const float3 *srcVertices, const float2 *srcUvs, int32_t vertexCount);
    static Mesh CreateTriangle(float width = 1.0f, float height = 1.0f);
    static Mesh CreatePlane(float width = 1.0f, float depth = 1.0f);
-   static Mesh CreateCube(float width = 1.0f, float height = 1.0f, float depth = 1.0f);
-   static Mesh CreateSphere(float radius = 0.5f, int32_t segments = 16, int32_t rings = 8);
-   static Mesh LoadOBJ(const char *filename);
+    static Mesh CreateCube(float width = 1.0f, float height = 1.0f, float depth = 1.0f);
+    static Mesh CreateSphere(float radius = 0.5f, int32_t segments = 16, int32_t rings = 8);
+    static Mesh LoadOBJ(const char *filename);
+    static Mesh LoadGLTF(const char *filename);
 
  private:
    friend class MeshCollider;
