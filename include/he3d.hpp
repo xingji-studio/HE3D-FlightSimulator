@@ -453,11 +453,24 @@ class Renderer
 
    // Present shows the finished frame.
    // Present 显示完成的画面。
-   void Present();
-   void Resize(int32_t w, int32_t h);
-   void SetMainLight(const DirectionalLight &light) { mainLight = light; }
+    void Present();
+    void Resize(int32_t w, int32_t h);
+    void SetMainLight(const DirectionalLight &light) { mainLight = light; }
+    int32_t GetPresentedWidth() const;
+    int32_t GetPresentedHeight() const;
+    const ColorA *GetPresentedPixels() const;
 
- private:
+  private:
+    struct PresentedFrameView {
+        const ColorA *pixels;
+        int32_t width;
+        int32_t height;
+
+        PresentedFrameView() : pixels(nullptr), width(0), height(0) {}
+        PresentedFrameView(const ColorA *viewPixels, int32_t viewWidth, int32_t viewHeight)
+            : pixels(viewPixels), width(viewWidth), height(viewHeight) {}
+    };
+
    int32_t  m_width;
    int32_t  m_height;
    int32_t  m_outputWidth;
@@ -478,9 +491,11 @@ class Renderer
                             // m_width * m_height
    ColorA  *m_msaaColorBuf; // 4 samples per pixel / 每像素 4 个采样颜色
    float   *m_msaaDepthBuf; // 4 samples per pixel / 每像素 4 个采样深度
-   bool     m_taaValid;
-   uint32_t m_taaFrameIndex;
+    bool     m_taaValid;
+    uint32_t m_taaFrameIndex;
+    PresentedFrameView m_presentedFrame;
 
+    void InvalidatePresentedView();
    bool          EnsureMsaaBuffers();
    void          ResolveMsaa();
    bool          ApplyFxaa();

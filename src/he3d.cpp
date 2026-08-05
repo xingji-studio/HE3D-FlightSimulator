@@ -1112,7 +1112,7 @@ Texture Texture::LoadImage(const char *filename)
 // ============================================================================
 Renderer::Renderer(Window *window, int32_t w, int32_t h)
     : m_width(w), m_height(h), m_outputWidth(w), m_outputHeight(h), m_ssaaScale(GetSsaaScale()),
-      m_window(window)
+      m_window(window), m_presentedFrame()
 {
    if (w <= 0 || h <= 0) {
       m_width         = 0;
@@ -1186,8 +1186,17 @@ Renderer::~Renderer()
    delete[] m_depthBuf;
 }
 
+void Renderer::InvalidatePresentedView() { m_presentedFrame = PresentedFrameView(); }
+
+int32_t Renderer::GetPresentedWidth() const { return m_presentedFrame.width; }
+
+int32_t Renderer::GetPresentedHeight() const { return m_presentedFrame.height; }
+
+const ColorA *Renderer::GetPresentedPixels() const { return m_presentedFrame.pixels; }
+
 void Renderer::Resize(int32_t w, int32_t h)
 {
+   InvalidatePresentedView();
    delete[] m_colorBuf;
    delete[] m_fxaaBuf;
    delete[] m_taaBuf;
@@ -1311,6 +1320,7 @@ void Renderer::ResolveMsaa()
 
 void Renderer::Clear(color3 color)
 {
+   InvalidatePresentedView();
    if (m_width <= 0 || m_height <= 0 || !m_colorBuf || !m_depthBuf) {
       return;
    }
@@ -1368,6 +1378,7 @@ float2 Renderer::CurrentTaaJitter() const
 // ============================================================================
 void Renderer::DrawGameObject(const GameObject &obj, const Camera &cam, color3 color)
 {
+   InvalidatePresentedView();
    if (m_width <= 0 || m_height <= 0) return;
    const Mesh &mesh = obj.GetMesh();
    if (!mesh.IsValid() || mesh.GetVertexCount() < 3) return;
@@ -1434,6 +1445,7 @@ void Renderer::DrawGameObject(const GameObject &obj, const Camera &cam, color3 c
 // ============================================================================
 void Renderer::DrawGameObject(const GameObject &obj, const Camera &cam, const Texture &tex)
 {
+   InvalidatePresentedView();
    if (m_width <= 0 || m_height <= 0) return;
    const Mesh &mesh = obj.GetMesh();
    if (!mesh.IsValid() || mesh.GetVertexCount() < 3) return;
@@ -1957,6 +1969,7 @@ const ColorA *Renderer::ApplySsaa(const ColorA *source)
 
 void Renderer::Present()
 {
+   InvalidatePresentedView();
    if (m_width <= 0 || m_height <= 0 || !m_colorBuf) {
       return;
    }
@@ -1976,6 +1989,7 @@ void Renderer::Present()
    pixels                = ApplySsaa(pixels);
    int32_t presentWidth  = (m_ssaaScale > 1) ? m_outputWidth : m_width;
    int32_t presentHeight = (m_ssaaScale > 1) ? m_outputHeight : m_height;
+   m_presentedFrame = PresentedFrameView(pixels, presentWidth, presentHeight);
    HE3D::Present(m_window, presentWidth, presentHeight, pixels);
 }
 
