@@ -28,6 +28,7 @@ namespace Detail
 {
 class ColliderAccess;
 }
+enum class ColliderKind { Box, Convex, Mesh };
 
 // Basic idea for users:
 // Mesh is the shape, GameObject is the object, Camera is the view, Renderer
@@ -154,16 +155,16 @@ class GameObject
 };
 
 // ============================================================================
-// PhysicsContact stores a collision contact result.
-// PhysicsContact 保存一次碰撞接触结果。
+// PhysicsContact reserves the public shape of a collision contact result.
+// PhysicsContact 预留碰撞接触结果的公开形状。
 // ============================================================================
 struct PhysicsContact {
-   bool   hit;
-   float  penetration;
-   float3 normal;
-   float3 point;
+    float  penetration;
+    float3 normal;
+    float3 point;
+    const GameObject *other;
 
-   PhysicsContact() : hit(false), penetration(0.0f), normal{0, 1, 0}, point{0, 0, 0} {}
+    PhysicsContact() : penetration(0.0f), normal{0, 1, 0}, point{0, 0, 0}, other(nullptr) {}
 };
 
 /// HeightSampleCallback returns terrain height at world x/z for a caller-owned
@@ -242,27 +243,52 @@ class HeightFieldCollider
 RayHit RaycastMeshTriangles(const Ray &ray, const GameObject &object);
 
 // ============================================================================
+// Collider is the common public base for all collision shapes.
+// Collider 是所有碰撞形状的公开公共基类。
+// ============================================================================
+class Collider
+{
+ public:
+    virtual bool IsValid() const;
+    AABB         LocalAABB() const;
+    ColliderKind GetKind() const;
+    float3       EstimateInertia(float mass) const;
+    float        EstimateDamping(float mass = 1.0f) const;
+
+ protected:
+    explicit Collider(ColliderKind kind);
+    void SetColliderState(bool valid, AABB localBounds);
+
+    ColliderKind m_kind;
+    AABB         m_localBounds;
+    bool         m_valid;
+
+ private:
+    friend class PhysicsScene;
+    friend class Detail::ColliderAccess;
+
+    Collider()                            = delete;
+    Collider(const Collider &)            = delete;
+    Collider &operator=(const Collider &) = delete;
+};
+
+// ============================================================================
 // BoxCollider stores a dynamic oriented box shape.
 // BoxCollider 保存动态有向盒形状。
 // ============================================================================
-class BoxCollider
+class BoxCollider : public Collider
 {
  public:
-   BoxCollider();
-   BoxCollider(float width, float height, float depth);
+    BoxCollider();
+    BoxCollider(float width, float height, float depth);
 
-   bool  SetSize(float width, float height, float depth);
-   bool  IsValid() const;
-   AABB  LocalAABB() const;
-   float EstimateInertia(float mass) const;
-   float EstimateDamping(float mass = 1.0f) const;
+    bool SetSize(float width, float height, float depth);
 
  private:
    friend class PhysicsScene;
    friend class Detail::ColliderAccess;
 
-   float3 m_halfExtents;
-   bool   m_valid;
+    float3 m_halfExtents;
 
    BoxCollider(const BoxCollider &)            = delete;
    BoxCollider &operator=(const BoxCollider &) = delete;
@@ -272,18 +298,14 @@ class BoxCollider
 // ConvexCollider stores a validated local convex mesh cache.
 // ConvexCollider 保存经过校验的局部凸网格缓存。
 // ============================================================================
-class ConvexCollider
+class ConvexCollider : public Collider
 {
  public:
    ConvexCollider();
    explicit ConvexCollider(const Mesh &mesh);
    ~ConvexCollider();
 
-   bool  BuildFromMesh(const Mesh &mesh);
-   bool  IsValid() const;
-   AABB  LocalAABB() const;
-   float EstimateInertia(float mass) const;
-   float EstimateDamping(float mass = 1.0f) const;
+    bool BuildFromMesh(const Mesh &mesh);
 
  private:
    friend class PhysicsScene;
@@ -295,10 +317,7 @@ class ConvexCollider
    int32_t m_faceAxisCount;
    float3 *m_edgeAxes;
    int32_t m_edgeAxisCount;
-   AABB    m_localBounds;
-   bool    m_valid;
-
-   void Clear();
+    void Clear();
 
    ConvexCollider(const ConvexCollider &)            = delete;
    ConvexCollider &operator=(const ConvexCollider &) = delete;
@@ -308,24 +327,18 @@ class ConvexCollider
 // MeshCollider borrows a mesh and uses its current triangle geometry.
 // MeshCollider 借用 mesh，并使用它当前的三角形几何。
 // ============================================================================
-class MeshCollider
+class MeshCollider : public Collider
 {
  public:
    explicit MeshCollider(const Mesh &mesh);
 
-   void  Refresh();
-   bool  IsValid() const;
-   AABB  LocalAABB() const;
-   float EstimateInertia(float mass) const;
-   float EstimateDamping(float mass = 1.0f) const;
+    void Refresh();
 
  private:
    friend class PhysicsScene;
    friend class Detail::ColliderAccess;
 
-   const Mesh *m_mesh;
-   AABB        m_localBounds;
-   bool        m_valid;
+    const Mesh *m_mesh;
 
    MeshCollider()                                = delete;
    MeshCollider(const MeshCollider &)            = delete;
@@ -338,67 +351,79 @@ class MeshCollider
 // ============================================================================
 enum class PhysicsSettingResult { Applied, AppliedWithWarning, Rejected };
 
+class PhysicsMaterial
+{
+ public:
+    PhysicsMaterial();
+
+    float GetFriction() const;
+    float GetRestitution() const;
+
+    PhysicsSettingResult SetFriction(float value);
+    PhysicsSettingResult SetRestitution(float value);
+
+ private:
+    float m_friction;
+    float m_restitution;
+};
+
 class PhysicsProperties
 {
  public:
-   PhysicsProperties();
+    PhysicsProperties();
 
-   float GetMass() const;
-   float GetInertia() const;
-   float GetFriction() const;
-   float GetRestitution() const;
-   float GetDamping() const;
+    float                  GetMass() const;
+    float3                 GetInertia() const;
+    float                  GetDamping() const;
+    const PhysicsMaterial &GetMaterial() const;
 
-   PhysicsSettingResult SetMass(float value);
-   PhysicsSettingResult SetInertia(float value);
-   PhysicsSettingResult SetFriction(float value);
-   PhysicsSettingResult SetRestitution(float value);
-   PhysicsSettingResult SetDamping(float value);
+    PhysicsSettingResult SetMass(float value);
+    PhysicsSettingResult SetInertia(float3 value);
+    PhysicsSettingResult SetDamping(float value);
+    void                 SetMaterial(const PhysicsMaterial &value);
 
  private:
    friend class PhysicsScene;
 
-   float m_mass;
-   float m_inertia;
-   float m_friction;
-   float m_restitution;
-   float m_damping;
+    float           m_mass;
+    float3          m_inertia;
+    float           m_damping;
+    PhysicsMaterial m_material;
 };
 
 // ============================================================================
-// PhysicsScene steps bodies and resolves collider contacts together.
-// PhysicsScene 统一推进刚体，并解算 collider 接触。
+// PhysicsScene registers bodies and owns their runtime state.
+// PhysicsScene 注册刚体并拥有其运行时状态。
 // ============================================================================
 class PhysicsScene
 {
  public:
-   /// Construct a physics scene with storage for capacity dynamic/static
-   /// entries. 构造可容纳 capacity 个动态/静态条目的物理场景。
-   explicit PhysicsScene(int32_t capacity = 32);
-   ~PhysicsScene();
+    /// Construct a physics scene with storage for at most capacity bodies.
+    /// 构造最多容纳 capacity 个刚体的场景。
+    explicit PhysicsScene(int32_t capacity = 32);
+    ~PhysicsScene();
 
-   /// Scene-wide medium drag that damps velocity and angularVelocity.
-   /// 场景介质阻力，会衰减线速度和角速度。
-   float drag;
-
-   bool AddStaticBody(GameObject &object, MeshCollider &collider);
-   bool AddDynamicBody(GameObject &object, BoxCollider &collider, PhysicsProperties &properties);
-   bool AddDynamicBody(GameObject &object, ConvexCollider &collider, PhysicsProperties &properties);
-   bool RemoveBody(GameObject &object);
-   bool RefreshCollider(GameObject &object);
-   bool HasBody(const GameObject &object) const;
-   bool IsDynamicBody(const GameObject &object) const;
-   void SetGravity(float3 value);
-   float3 GetGravity() const;
+    bool IsValid() const;
+    bool AddStaticBody(GameObject &object, Collider &collider, PhysicsMaterial &material);
+    bool AddKinematicBody(GameObject &object, Collider &collider, PhysicsMaterial &material);
+    bool AddDynamicBody(GameObject &object, Collider &collider, PhysicsProperties &properties);
+    bool RemoveBody(GameObject &object);
+    bool HasBody(const GameObject &object) const;
+    PhysicsSettingResult SetGravity(float3 value);
+    float3 GetGravity() const;
+    PhysicsSettingResult SetDrag(float value);
+    float GetDrag() const;
 
    float3 GetVelocity(const GameObject &object) const;
    float3 GetAngularVelocity(const GameObject &object) const;
    bool   SetVelocity(GameObject &object, const float3 &velocity);
    bool   SetAngularVelocity(GameObject &object, const float3 &angularVelocity);
    bool   AddForce(GameObject &object, const float3 &force);
-   bool   AddTorque(GameObject &object, const float3 &torque);
-   bool   AddImpulse(GameObject &object, const float3 &impulse);
-   bool   AddAngularImpulse(GameObject &object, const float3 &impulse);
+    bool   AddTorque(GameObject &object, const float3 &torque);
+    bool   AddImpulse(GameObject &object, const float3 &impulse);
+    bool   AddAngularImpulse(GameObject &object, const float3 &impulse);
+    /// This registration-only slice does not compute contacts.
+    int32_t GetContacts(const GameObject &object, PhysicsContact *output, int32_t capacity) const;
 
    /// Remove all dynamic bodies and static colliders from this scene.
    /// 移除此场景中的所有动态刚体和静态碰撞体。

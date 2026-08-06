@@ -24,6 +24,12 @@ static bool DirectionsNear(float3 a, float3 b)
    return HE3D_ABS(dot) >= 0.9999f;
 }
 
+static bool IsFiniteFloat(float value)
+{
+   return value >= -340282346638528859811704183484516925440.0f &&
+          value <= 340282346638528859811704183484516925440.0f;
+}
+
 HeightFieldCollider::Tile::Tile()
     : active(false), originX(0.0f), originZ(0.0f), bounds(), cellBounds(nullptr), cellCount(0),
       cellCapacity(0)
@@ -145,32 +151,47 @@ float3 HeightFieldCollider::NormalAt(float x, float z) const
    return float3(hx0 - hx1, 2.0f * epsilon, hz0 - hz1).normalizeFast();
 }
 
-BoxCollider::BoxCollider() : m_halfExtents{0, 0, 0}, m_valid(false) {}
+Collider::Collider(ColliderKind kind)
+    : m_kind(kind), m_localBounds(AABB({0, 0, 0}, {0, 0, 0})), m_valid(false)
+{
+}
+
+void Collider::SetColliderState(bool valid, AABB localBounds)
+{
+   m_valid       = valid;
+   m_localBounds = valid ? localBounds : AABB({0, 0, 0}, {0, 0, 0});
+}
+
+bool Collider::IsValid() const { return m_valid; }
+
+AABB Collider::LocalAABB() const
+{
+   return m_valid ? m_localBounds : AABB({0, 0, 0}, {0, 0, 0});
+}
+
+ColliderKind Collider::GetKind() const { return m_kind; }
+
+BoxCollider::BoxCollider() : Collider(ColliderKind::Box), m_halfExtents{0, 0, 0} {}
 
 BoxCollider::BoxCollider(float width, float height, float depth)
-    : m_halfExtents{0, 0, 0}, m_valid(false)
+    : Collider(ColliderKind::Box), m_halfExtents{0, 0, 0}
 {
    SetSize(width, height, depth);
 }
 
 bool BoxCollider::SetSize(float width, float height, float depth)
 {
-   m_valid       = width > 0.0f && height > 0.0f && depth > 0.0f;
-   m_halfExtents = m_valid ? float3(width * 0.5f, height * 0.5f, depth * 0.5f) : float3(0, 0, 0);
-   return m_valid;
+   bool valid    = IsFiniteFloat(width) && IsFiniteFloat(height) && IsFiniteFloat(depth) &&
+                 width > 0.0f && height > 0.0f && depth > 0.0f;
+   m_halfExtents = valid ? float3(width * 0.5f, height * 0.5f, depth * 0.5f) : float3(0, 0, 0);
+   SetColliderState(valid, AABB(-m_halfExtents, m_halfExtents));
+   return valid;
 }
 
-bool BoxCollider::IsValid() const { return m_valid; }
-
-AABB BoxCollider::LocalAABB() const
+static float3 EstimateBoundsInertia(AABB bounds, float mass)
 {
-   return m_valid ? AABB(-m_halfExtents, m_halfExtents) : AABB({0, 0, 0}, {0, 0, 0});
-}
-
-static float EstimateBoundsInertia(AABB bounds, float mass)
-{
-   if (mass <= 0.0f) {
-      return 0.0f;
+   if (!IsFiniteFloat(mass) || mass <= 0.0f) {
+      return {0, 0, 0};
    }
    float3 size = bounds.max - bounds.min;
    if (size.x < 0.001f) size.x = 0.001f;
@@ -179,7 +200,7 @@ static float EstimateBoundsInertia(AABB bounds, float mass)
    float ix = mass * (size.y * size.y + size.z * size.z) / 12.0f;
    float iy = mass * (size.x * size.x + size.z * size.z) / 12.0f;
    float iz = mass * (size.x * size.x + size.y * size.y) / 12.0f;
-   return (ix + iy + iz) / 3.0f;
+   return {ix, iy, iz};
 }
 
 static float EstimateBoundsDamping(AABB bounds, float mass)
@@ -193,19 +214,19 @@ static float EstimateBoundsDamping(AABB bounds, float mass)
    return value;
 }
 
-float BoxCollider::EstimateInertia(float mass) const
+float3 Collider::EstimateInertia(float mass) const
 {
    return EstimateBoundsInertia(LocalAABB(), mass);
 }
 
-float BoxCollider::EstimateDamping(float mass) const
+float Collider::EstimateDamping(float mass) const
 {
    return EstimateBoundsDamping(LocalAABB(), mass);
 }
 
 ConvexCollider::ConvexCollider()
-    : m_vertices(nullptr), m_vertexCount(0), m_faceAxes(nullptr), m_faceAxisCount(0),
-      m_edgeAxes(nullptr), m_edgeAxisCount(0), m_localBounds(), m_valid(false)
+    : Collider(ColliderKind::Convex), m_vertices(nullptr), m_vertexCount(0), m_faceAxes(nullptr),
+      m_faceAxisCount(0), m_edgeAxes(nullptr), m_edgeAxisCount(0)
 {
 }
 
@@ -224,8 +245,7 @@ void ConvexCollider::Clear()
    m_faceAxisCount = 0;
    m_edgeAxes      = nullptr;
    m_edgeAxisCount = 0;
-   m_localBounds   = AABB();
-   m_valid         = false;
+   SetColliderState(false, AABB());
 }
 
 static bool AddUniqueDirection(float3 *directions, int32_t *count, int32_t capacity,
@@ -281,7 +301,7 @@ bool ConvexCollider::BuildFromMesh(const Mesh &mesh)
       return false;
    }
 
-   m_localBounds   = AABB(m_vertices[0], m_vertices[0]);
+    m_localBounds   = AABB(m_vertices[0], m_vertices[0]);
    float3 centroid = {0, 0, 0};
    for (int32_t i = 0; i < m_vertexCount; i++) {
       IncludePoint(m_localBounds, m_vertices[i]);
@@ -318,39 +338,22 @@ bool ConvexCollider::BuildFromMesh(const Mesh &mesh)
       }
    }
 
-   m_valid = m_faceAxisCount >= 3 && m_edgeAxisCount >= 3;
-   if (!m_valid) {
-      Clear();
-   }
-   return m_valid;
+    bool valid = m_faceAxisCount >= 3 && m_edgeAxisCount >= 3;
+    if (!valid) {
+       Clear();
+    }
+    if (valid) SetColliderState(true, m_localBounds);
+    return valid;
 }
 
-bool ConvexCollider::IsValid() const { return m_valid; }
-
-AABB ConvexCollider::LocalAABB() const
-{
-   return m_valid ? m_localBounds : AABB({0, 0, 0}, {0, 0, 0});
-}
-
-float ConvexCollider::EstimateInertia(float mass) const
-{
-   return EstimateBoundsInertia(LocalAABB(), mass);
-}
-
-float ConvexCollider::EstimateDamping(float mass) const
-{
-   return EstimateBoundsDamping(LocalAABB(), mass);
-}
-
-MeshCollider::MeshCollider(const Mesh &mesh) : m_mesh(&mesh), m_localBounds(), m_valid(false)
+MeshCollider::MeshCollider(const Mesh &mesh) : Collider(ColliderKind::Mesh), m_mesh(&mesh)
 {
    Refresh();
 }
 
 void MeshCollider::Refresh()
 {
-   m_localBounds = AABB();
-   m_valid       = false;
+    SetColliderState(false, AABB());
    if (!m_mesh || !m_mesh->IsValid() || m_mesh->GetVertexCount() < 3 ||
        (m_mesh->GetVertexCount() % 3) != 0) {
       return;
@@ -361,24 +364,7 @@ void MeshCollider::Refresh()
    for (int32_t i = 1; i < m_mesh->GetVertexCount(); i++) {
       IncludePoint(m_localBounds, vertices[i]);
    }
-   m_valid = true;
-}
-
-bool MeshCollider::IsValid() const { return m_valid; }
-
-AABB MeshCollider::LocalAABB() const
-{
-   return m_valid ? m_localBounds : AABB({0, 0, 0}, {0, 0, 0});
-}
-
-float MeshCollider::EstimateInertia(float mass) const
-{
-   return EstimateBoundsInertia(LocalAABB(), mass);
-}
-
-float MeshCollider::EstimateDamping(float mass) const
-{
-   return EstimateBoundsDamping(LocalAABB(), mass);
+    SetColliderState(true, m_localBounds);
 }
 
 InternalContactShape Detail::ColliderAccess::From(const GameObject  &object,

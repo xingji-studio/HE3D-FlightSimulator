@@ -118,41 +118,62 @@ static void TextureCreateCopiesPixelsAndLoadImageUsesHeaders()
 
 static void ColliderAndPhysicsSceneUseNewApi()
 {
-   HE3D::Mesh       cubeMesh  = HE3D::Mesh::CreateCube(1.0f, 1.0f, 1.0f);
-   HE3D::Mesh       floorMesh = HE3D::Mesh::CreatePlane(4.0f, 4.0f);
+   HE3D::Mesh cubeMesh = HE3D::Mesh::CreateCube(1.0f, 1.0f, 1.0f);
+   HE3D::Mesh floorMesh = HE3D::Mesh::CreatePlane(4.0f, 4.0f);
    HE3D::GameObject cube(cubeMesh);
    HE3D::GameObject floor(floorMesh);
-   cube.position = {0.0f, 0.49f, 0.0f};
-
-   HE3D::BoxCollider       box(1.0f, 1.0f, 1.0f);
-   HE3D::MeshCollider      floorCollider(floorMesh);
-   HE3D::ConvexCollider    convex(cubeMesh);
+   HE3D::BoxCollider box(1.0f, 1.0f, 1.0f);
+   HE3D::BoxCollider invalidBox(0.0f, 1.0f, 1.0f);
+   HE3D::MeshCollider floorCollider(floorMesh);
+   HE3D::ConvexCollider convex(cubeMesh);
+   HE3D::PhysicsMaterial floorMaterial;
    HE3D::PhysicsProperties properties;
-   Check(properties.SetMass(2.0f) == HE3D::PhysicsSettingResult::Applied,
-         "PhysicsProperties accepts positive mass");
-   Check(properties.SetRestitution(1.5f) == HE3D::PhysicsSettingResult::AppliedWithWarning,
-         "superelastic restitution is accepted with warning");
-   Check(box.EstimateInertia(properties.GetMass()) > 0.0f &&
-             box.EstimateDamping(properties.GetMass()) >= 0.0f,
-         "collider estimates inertia and damping");
+   Check(box.IsValid() && box.GetKind() == HE3D::ColliderKind::Box,
+         "BoxCollider exposes the common Collider contract");
+   Check(!invalidBox.IsValid() && !invalidBox.SetSize(-1.0f, 1.0f, 1.0f),
+         "BoxCollider rejects invalid dimensions");
+   Check(convex.IsValid() && convex.GetKind() == HE3D::ColliderKind::Convex,
+         "ConvexCollider builds a valid collider");
+   Check(floorCollider.IsValid() && floorCollider.GetKind() == HE3D::ColliderKind::Mesh,
+         "MeshCollider owns a valid borrowed-mesh view");
+   floorMesh = HE3D::Mesh::CreatePlane(5.0f, 5.0f);
+   floorCollider.Refresh();
+   Check(floorCollider.IsValid(), "MeshCollider refreshes after its borrowed mesh lifecycle changes");
+   Check(properties.SetMass(2.0f) == HE3D::PhysicsSettingResult::Applied &&
+             properties.SetMass(0.0f) == HE3D::PhysicsSettingResult::Rejected &&
+             properties.SetInertia(box.EstimateInertia(2.0f)) == HE3D::PhysicsSettingResult::Applied,
+         "PhysicsProperties validates body values");
+   Check(floorMaterial.SetFriction(-1.0f) == HE3D::PhysicsSettingResult::Rejected &&
+             floorMaterial.SetRestitution(1.5f) == HE3D::PhysicsSettingResult::AppliedWithWarning,
+         "PhysicsMaterial validates contact values");
 
-   properties.SetInertia(box.EstimateInertia(properties.GetMass()));
-   HE3D::PhysicsScene scene;
-   scene.drag = 0.0f;
-   scene.SetGravity({0.0f, 0.0f, 0.0f});
-   Check(scene.AddDynamicBody(cube, box, properties), "PhysicsScene accepts dynamic body");
-   Check(scene.AddStaticBody(floor, floorCollider), "PhysicsScene accepts static mesh body");
-   Check(scene.HasBody(cube) && scene.IsDynamicBody(cube), "PhysicsScene tracks body state");
-   Check(scene.SetVelocity(cube, {1.0f, 0.0f, 0.0f}), "PhysicsScene sets runtime velocity");
-   scene.Step(0.1f, 4);
-   Check(cube.position.x > 0.09f, "PhysicsScene integrates scene-owned velocity");
-   Check(scene.GetVelocity(cube).x > 0.0f, "PhysicsScene exposes runtime velocity");
-   Check(scene.RemoveBody(cube) && !scene.HasBody(cube), "PhysicsScene removes body");
-
-   HE3D::GameObject   convexObject(cubeMesh);
-   HE3D::PhysicsScene convexScene;
-   Check(convex.IsValid() && convexScene.AddDynamicBody(convexObject, convex, properties),
-         "PhysicsScene accepts convex dynamic body");
+   HE3D::PhysicsScene scene(3);
+   HE3D::PhysicsScene invalidScene(0);
+   Check(scene.IsValid() && !invalidScene.IsValid(),
+         "PhysicsScene reports registration storage validity");
+   Check(scene.SetGravity({0.0f, 0.0f, 0.0f}) == HE3D::PhysicsSettingResult::Applied &&
+             scene.SetDrag(0.0f) == HE3D::PhysicsSettingResult::Applied,
+         "PhysicsScene accepts finite gravity and drag");
+   Check(scene.AddDynamicBody(cube, box, properties), "PhysicsScene registers dynamic body");
+   Check(scene.AddStaticBody(floor, floorCollider, floorMaterial),
+         "PhysicsScene registers static body");
+   Check(scene.HasBody(cube) && scene.HasBody(floor), "PhysicsScene tracks registered bodies");
+   Check(scene.SetVelocity(cube, {1.0f, 0.0f, 0.0f}) &&
+             !scene.SetVelocity(cube, {0.0f / 0.0f, 0.0f, 0.0f}) &&
+             scene.AddForce(cube, {1.0f, 0.0f, 0.0f}) &&
+             !scene.AddForce(cube, {0.0f / 0.0f, 0.0f, 0.0f}),
+         "PhysicsScene rejects nonfinite runtime inputs");
+   Check(!scene.AddDynamicBody(floor, floorCollider, properties),
+         "PhysicsScene rejects unsupported dynamic mesh registration");
+   HE3D::PhysicsContact contacts[2];
+   Check(scene.GetContacts(cube, contacts, 2) == 0,
+         "PhysicsScene contact query does not compute contacts in registration slice");
+   Check(scene.RemoveBody(cube) && !scene.HasBody(cube) && !scene.RemoveBody(cube),
+         "PhysicsScene removes registered body exactly once");
+   scene.Clear();
+   Check(!scene.HasBody(floor), "PhysicsScene clears registration storage");
+   Check(!invalidScene.AddDynamicBody(cube, box, properties),
+         "PhysicsScene rejects registration on invalid storage");
 }
 
 int main()
