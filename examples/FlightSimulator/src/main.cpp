@@ -450,6 +450,23 @@ static void DrawScene(HE3D::Renderer &renderer, TerrainTile *tiles, int tileCoun
    renderer.Present();
 }
 
+static HE3D::float3 InterpolatePosition(HE3D::float3 previous, HE3D::float3 current, float alpha)
+{
+   return previous + (current - previous) * alpha;
+}
+
+static HE3D::quat InterpolateOrientation(HE3D::quat previous, HE3D::quat current, float alpha)
+{
+   float dot = previous.w * current.w + previous.x * current.x + previous.y * current.y +
+               previous.z * current.z;
+   if (dot < 0.0f) current = {-current.w, -current.x, -current.y, -current.z};
+   HE3D::quat result = {previous.w + (current.w - previous.w) * alpha,
+                        previous.x + (current.x - previous.x) * alpha,
+                        previous.y + (current.y - previous.y) * alpha,
+                        previous.z + (current.z - previous.z) * alpha};
+   return result.normalizeFast();
+}
+
 // Run the flight simulator example.
 // 运行飞行模拟示例。
 int main(int argc, char **argv, char **envp)
@@ -499,6 +516,7 @@ int main(int argc, char **argv, char **envp)
    }
    HE3D::GameObject plane(planeMesh);
    plane.position = {0.0f, 13.0f, 0.0f};
+   HE3D::GameObject presentationPlane(planeMesh);
 
     HE3D::Texture planeTexture;
     if (BuildApplicationResourcePath(resourcePath, sizeof(resourcePath), "biplane.bmp")) {
@@ -548,31 +566,47 @@ int main(int argc, char **argv, char **envp)
    double       fpsStart       = lastTime;
    unsigned int fpsFrames      = 0;
    bool         fxaaKeyWasDown = false;
+   double       physicsAccumulator = 0.0;
+   const double physicsStep = 1.0 / 120.0;
+   HE3D::float3 previousPosition = plane.position;
+   HE3D::quat   previousOrientation = plane.orientation;
 
    while (!g_quit && !HE3D::WindowShouldClose(window)) {
       double frameStart = HE3D::TimeSeconds();
       HE3D::PollEvents(window);
 
       double now       = frameStart;
-      float  deltaTime = (float)(now - lastTime);
-      lastTime         = now;
-      if (deltaTime > 0.1f) {
-         deltaTime = 0.1f;
-      }
+       double frameDelta = now - lastTime;
+       lastTime         = now;
+       if (frameDelta < 0.0 || frameDelta != frameDelta || frameDelta > 0.25) frameDelta = 0.0;
 
-      HandleToggleKeys(fxaaKeyWasDown);
-       BuildPhysicsScene(worldScene, planeProperties, planeCollider, plane, tiles, tileCount,
-                         plane.position, terrainMaterial);
-      HE3D::float3 forward = UpdateFlightControls(controls, worldScene, plane, deltaTime);
-
-      UpdateTerrainTiles(tiles, tileCount, pendingTiles, pendingCount, pendingCursor,
-                         terrainCenterX, terrainCenterZ, terrainDirty, plane.position, tileRadius,
-                         terrainGridCount, terrainStep, tileSize);
-
-      worldScene.Step(deltaTime, 1);
-
-      UpdateCamera(camera, cameraYaw, plane, forward, cameraOffset, deltaTime);
-      DrawScene(renderer, tiles, tileCount, plane, planeTexture, hasPlaneTexture, camera, tileSize);
+       HandleToggleKeys(fxaaKeyWasDown);
+       physicsAccumulator += frameDelta;
+       int physicsIterations = 0;
+       while (physicsAccumulator >= physicsStep && physicsIterations < 8) {
+          previousPosition = plane.position;
+          previousOrientation = plane.orientation;
+          BuildPhysicsScene(worldScene, planeProperties, planeCollider, plane, tiles, tileCount,
+                            plane.position, terrainMaterial);
+          HE3D::float3 forward = UpdateFlightControls(controls, worldScene, plane,
+                                                      (float)physicsStep);
+          UpdateTerrainTiles(tiles, tileCount, pendingTiles, pendingCount, pendingCursor,
+                             terrainCenterX, terrainCenterZ, terrainDirty, plane.position,
+                             tileRadius, terrainGridCount, terrainStep, tileSize);
+          worldScene.Step((float)physicsStep, 1);
+          physicsAccumulator -= physicsStep;
+          physicsIterations++;
+          (void)forward;
+       }
+       if (physicsIterations == 8 && physicsAccumulator >= physicsStep) physicsAccumulator = 0.0;
+       float alpha = (float)(physicsAccumulator / physicsStep);
+       presentationPlane.position = InterpolatePosition(previousPosition, plane.position, alpha);
+       presentationPlane.orientation =
+           InterpolateOrientation(previousOrientation, plane.orientation, alpha);
+       UpdateCamera(camera, cameraYaw, presentationPlane, presentationPlane.Forward(), cameraOffset,
+                    (float)(frameDelta > 0.0 ? frameDelta : physicsStep));
+       DrawScene(renderer, tiles, tileCount, presentationPlane, planeTexture, hasPlaneTexture,
+                 camera, tileSize);
 
       fpsFrames++;
       double fpsElapsed = now - fpsStart;
