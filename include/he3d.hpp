@@ -29,6 +29,7 @@ namespace Detail
 class ColliderAccess;
 }
 enum class ColliderKind { Box, Convex, Mesh };
+enum class ConvexBuildMode { SingleHull };
 
 // Basic idea for users:
 // Mesh is the shape, GameObject is the object, Camera is the view, Renderer

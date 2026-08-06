@@ -42,6 +42,7 @@ set(HE3D_CORE_SOURCES
     src/he3d.cpp
     src/he3d_collider.cpp
     src/he3d_gltf.cpp
+    src/he3d_convex_builder.cpp
     src/he3d_physics.cpp
 )
 
@@ -420,6 +421,33 @@ endif()
 if(HE3D_BUILD_INTERNAL_TESTS)
     enable_testing()
     message(STATUS "HE3D internal tests enabled")
+
+    add_executable(he3d_internal_convex_tests
+        tests/internal/he3d_internal_convex_tests.cpp
+        ${HE3D_CORE_SOURCES}
+        src/platform/he3d_platform_console.cpp
+    )
+
+    target_include_directories(he3d_internal_convex_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${HE3D_PRIVATE_INCLUDE_DIRS}
+    )
+
+    target_compile_definitions(he3d_internal_convex_tests
+        PRIVATE
+            HE3D_BACKEND_CONSOLE
+    )
+
+    target_compile_options(he3d_internal_convex_tests
+        PRIVATE
+            $<$<CONFIG:Release>:${HE3D_RELEASE_OPT_FLAG}>
+            $<$<CONFIG:Debug>:-O0>
+            $<$<CONFIG:Debug>:-g>
+    )
+
+    add_test(NAME he3d_internal_convex_tests COMMAND he3d_internal_convex_tests)
 
     add_executable(he3d_internal_physics_tests
         tests/internal/he3d_internal_physics_tests.cpp
