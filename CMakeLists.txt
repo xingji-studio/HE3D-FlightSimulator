@@ -176,6 +176,7 @@ if(HE3D_BACKEND STREQUAL "XAPI")
         ${HE3D_CORE_SOURCES}
         src/platform/he3d_platform_xapi.cpp
     )
+    add_library(HE3D::Engine ALIAS he3d_engine_xapi)
 
     target_include_directories(he3d_engine_xapi
         PUBLIC
@@ -261,6 +262,7 @@ if(HE3D_BACKEND STREQUAL "SDL3")
             ${HE3D_CORE_SOURCES}
             src/platform/he3d_platform_sdl3.cpp
         )
+        add_library(HE3D::Engine ALIAS he3d_engine_sdl3)
 
         target_include_directories(he3d_engine_sdl3
             PUBLIC
@@ -322,6 +324,7 @@ if(HE3D_BACKEND STREQUAL "CONSOLE")
         ${HE3D_CORE_SOURCES}
         src/platform/he3d_platform_console.cpp
     )
+    add_library(HE3D::Engine ALIAS he3d_engine_console)
 
     target_include_directories(he3d_engine_console
         PUBLIC
@@ -375,14 +378,11 @@ if(HE3D_BUILD_TESTS)
 
     add_executable(he3d_public_api_tests
         tests/public_api/he3d_public_api_tests.cpp
-        ${HE3D_CORE_SOURCES}
-        src/platform/he3d_platform_console.cpp
     )
 
     target_include_directories(he3d_public_api_tests
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${HE3D_PRIVATE_INCLUDE_DIRS}
     )
 
     target_compile_definitions(he3d_public_api_tests
@@ -397,6 +397,8 @@ if(HE3D_BUILD_TESTS)
             $<$<CONFIG:Debug>:-O0>
             $<$<CONFIG:Debug>:-g>
     )
+
+    target_link_libraries(he3d_public_api_tests PRIVATE HE3D::Engine)
 
     add_test(NAME he3d_public_api_tests COMMAND he3d_public_api_tests)
     add_test(NAME he3d_include_boundaries
