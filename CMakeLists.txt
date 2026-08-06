@@ -407,6 +407,13 @@ if(HE3D_BUILD_TESTS)
                 -DHE3D_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_include_boundaries.cmake
     )
+
+    add_executable(he3d_console_one_frame_smoke
+        tests/integration/he3d_console_one_frame_smoke.cpp
+    )
+    target_link_libraries(he3d_console_one_frame_smoke PRIVATE HE3D::Engine)
+    add_test(NAME he3d_console_one_frame_smoke COMMAND he3d_console_one_frame_smoke)
+    set_tests_properties(he3d_console_one_frame_smoke PROPERTIES LABELS Integration)
 endif()
 
 if(HE3D_BUILD_INTERNAL_TESTS)
