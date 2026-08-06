@@ -175,6 +175,7 @@ if(HE3D_BACKEND STREQUAL "XAPI")
     add_library(he3d_engine_xapi STATIC
         ${HE3D_CORE_SOURCES}
         src/platform/he3d_platform_xapi.cpp
+        src/platform/he3d_xapi_runtime.cpp
     )
     add_library(HE3D::Engine ALIAS he3d_engine_xapi)
 
