@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
 
 namespace HE3D {
 
@@ -25,6 +26,27 @@ static void *SdlAlloc(uint64_t size) {
 
 static void SdlFree(void *ptr) {
     std::free(ptr);
+}
+
+static bool SdlGetApplicationBasePath(char *buffer, uint64_t bufferSize) {
+    if (buffer && bufferSize > 0) buffer[0] = '\0';
+    if (!buffer || bufferSize == 0) return false;
+    char *basePath = SDL_GetBasePath();
+    if (!basePath) return false;
+    size_t length = std::strlen(basePath);
+    while (length > 1 && (basePath[length - 1] == '/' || basePath[length - 1] == '\\')) length--;
+    bool rootPath = length == 1 && (basePath[0] == '/' || basePath[0] == '\\');
+    size_t outputLength = rootPath ? 1 : length + 1;
+    if ((uint64_t)outputLength + 1 > bufferSize) {
+        SDL_free(basePath);
+        return false;
+    }
+    for (size_t index = 0; index < length; ++index)
+        buffer[index] = basePath[index] == '\\' ? '/' : basePath[index];
+    if (!rootPath) buffer[length] = '/';
+    buffer[outputLength] = '\0';
+    SDL_free(basePath);
+    return true;
 }
 
 static bool SdlLoadFile(const char *path, FileData *outFile) {
@@ -272,7 +294,8 @@ static const Platform g_sdlPlatform = {
     SdlShouldClose,
     SdlTimeSeconds,
     SdlSleepMilliseconds,
-    SdlPresent};
+    SdlPresent,
+    SdlGetApplicationBasePath};
 
 const Platform *GetBuiltinPlatform() {
     return &g_sdlPlatform;

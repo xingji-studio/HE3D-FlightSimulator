@@ -476,6 +476,23 @@ static void ConsolePresent(Window *window, int32_t width, int32_t height, const 
     std::cout.flush();
 }
 
+static bool ConsoleGetApplicationBasePath(char *buffer, uint64_t bufferSize) {
+    if (buffer && bufferSize > 0) buffer[0] = '\0';
+    if (!buffer || bufferSize == 0) return false;
+    char executablePath[4096];
+    ssize_t length = readlink("/proc/self/exe", executablePath, sizeof(executablePath) - 1);
+    if (length < 1 || length >= (ssize_t)(sizeof(executablePath) - 1)) return false;
+    executablePath[length] = '\0';
+    ssize_t lastSlash = -1;
+    for (ssize_t index = 0; index < length; ++index) {
+        if (executablePath[index] == '/') lastSlash = index;
+    }
+    if (lastSlash < 0 || (uint64_t)(lastSlash + 2) > bufferSize) return false;
+    for (ssize_t index = 0; index <= lastSlash; ++index) buffer[index] = executablePath[index];
+    buffer[lastSlash + 1] = '\0';
+    return true;
+}
+
 // The Platform table is the backend boundary; HE3D wrappers dispatch to these function pointers.
 // Platform 表就是后端边界；HE3D 包装函数最终会分发到这些函数指针。
 static const Platform g_consolePlatform = {
@@ -491,7 +508,7 @@ static const Platform g_consolePlatform = {
     ConsoleShouldClose,
     ConsoleTimeSeconds,
     ConsoleSleepMilliseconds,
-    ConsolePresent};
+    ConsolePresent, ConsoleGetApplicationBasePath};
 
 const Platform *GetBuiltinPlatform() {
     // Returning this table makes the console backend the default Platform for this target.

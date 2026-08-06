@@ -247,6 +247,23 @@ static void XapiFree(void *ptr) {
     }
 }
 
+static bool XapiGetApplicationBasePath(char *buffer, uint64_t bufferSize) {
+    if (buffer && bufferSize > 0) buffer[0] = '\0';
+    if (!buffer || bufferSize == 0) return false;
+    char executablePath[4096];
+    ssize_t length = readlink("/proc/self/exe", executablePath, sizeof(executablePath) - 1);
+    if (length < 1 || length >= (ssize_t)(sizeof(executablePath) - 1)) return false;
+    executablePath[length] = '\0';
+    ssize_t lastSlash = -1;
+    for (ssize_t index = 0; index < length; ++index) {
+        if (executablePath[index] == '/') lastSlash = index;
+    }
+    if (lastSlash < 0 || (uint64_t)(lastSlash + 2) > bufferSize) return false;
+    for (ssize_t index = 0; index <= lastSlash; ++index) buffer[index] = executablePath[index];
+    buffer[lastSlash + 1] = '\0';
+    return true;
+}
+
 static bool XapiLoadFile(const char *path, FileData *outFile) {
     if (!path || !outFile) {
         return false;
@@ -493,7 +510,8 @@ static const Platform g_xapiPlatform = {
     XapiShouldClose,
     XapiTimeSeconds,
     XapiSleepMilliseconds,
-    XapiPresent};
+    XapiPresent,
+    XapiGetApplicationBasePath};
 
 const Platform *GetBuiltinPlatform() {
     return &g_xapiPlatform;

@@ -53,6 +53,7 @@ struct Platform {
     double (*timeSeconds)();
     void (*sleepMilliseconds)(uint64_t milliseconds);
     void (*present)(Window *window, int32_t width, int32_t height, const ColorA *pixels);
+    bool (*getApplicationBasePath)(char *buffer, uint64_t bufferSize);
 };
 
 const Platform *GetPlatform();
@@ -75,6 +76,10 @@ void PaceFrame(double frameStart);
 
 inline bool LoadFile(const char *path, FileData *outFile) {
     return GetPlatform()->loadFile(path, outFile);
+}
+
+inline bool GetApplicationBasePath(char *buffer, uint64_t bufferSize) {
+    return GetPlatform()->getApplicationBasePath(buffer, bufferSize);
 }
 
 inline void CloseFile(FileData *file) {

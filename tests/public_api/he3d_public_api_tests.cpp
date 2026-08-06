@@ -2,6 +2,8 @@
 
 #include <cfloat>
 #include <cstdio>
+#include <cstring>
+#include <unistd.h>
 
 static int g_failures = 0;
 
@@ -21,6 +23,38 @@ static bool Near(float a, float b, float tolerance)
 }
 
 static bool Finite(float value) { return value >= -FLT_MAX && value <= FLT_MAX; }
+
+static void ApplicationBasePathUsesExplicitContract()
+{
+   char buffer[4096];
+   std::memset(buffer, 'x', sizeof(buffer));
+   bool   found  = HE3D::GetApplicationBasePath(buffer, sizeof(buffer));
+   size_t length = std::strlen(buffer);
+   Check(found && length > 0 && buffer[0] == '/' && buffer[length - 1] == '/' &&
+             buffer[length] == '\0',
+         "application base path is absolute, terminated, and slash-normalized");
+
+   char smallBuffer[2] = {'x', 'x'};
+   Check(!HE3D::GetApplicationBasePath(smallBuffer, sizeof(smallBuffer)) && smallBuffer[0] == '\0',
+         "application base path rejects insufficient capacity without partial output");
+   char zeroBuffer = 'x';
+   Check(!HE3D::GetApplicationBasePath(&zeroBuffer, 0),
+         "application base path rejects zero-sized buffers");
+
+   char originalWorkingDirectory[4096];
+   char pathAfterChdir[4096];
+   bool canChangeWorkingDirectory =
+       getcwd(originalWorkingDirectory, sizeof(originalWorkingDirectory)) && chdir("/") == 0;
+   Check(canChangeWorkingDirectory,
+         "public API test host can change the working directory for application base path testing");
+   if (canChangeWorkingDirectory) {
+      bool stableAfterChdir = HE3D::GetApplicationBasePath(pathAfterChdir, sizeof(pathAfterChdir)) &&
+                              std::strcmp(buffer, pathAfterChdir) == 0;
+      Check(chdir(originalWorkingDirectory) == 0,
+            "public API test host restores the original working directory");
+      Check(stableAfterChdir, "application base path does not depend on the working directory");
+   }
+}
 
 static void MeshValuesAndRaycastsWork()
 {
@@ -226,6 +260,7 @@ static void KinematicBodiesUseSceneMotion()
 
 int main()
 {
+   ApplicationBasePathUsesExplicitContract();
    MeshValuesAndRaycastsWork();
    ObjLoaderCountsVertices();
    TextureCreateCopiesPixelsAndLoadImageUsesHeaders();
