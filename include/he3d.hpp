@@ -31,6 +31,33 @@ class ColliderAccess;
 enum class ColliderKind { Box, Convex, Mesh };
 enum class ConvexBuildMode { SingleHull };
 
+struct ConvexBuildPart
+{
+   float3 vertices[64];
+   int32_t vertexCount;
+   float3 faceAxes[16];
+   int32_t faceAxisCount;
+   float3 edgeAxes[64];
+   int32_t edgeAxisCount;
+   AABB    bounds;
+
+   ConvexBuildPart()
+       : vertices(), vertexCount(0), faceAxes(), faceAxisCount(0), edgeAxes(), edgeAxisCount(0),
+         bounds()
+   {
+   }
+};
+
+struct ConvexBuildData
+{
+   ConvexBuildMode mode;
+   ConvexBuildPart parts[16];
+   int32_t         partCount;
+   AABB            bounds;
+
+   ConvexBuildData() : mode(ConvexBuildMode::SingleHull), parts(), partCount(0), bounds() {}
+};
+
 // Basic idea for users:
 // Mesh is the shape, GameObject is the object, Camera is the view, Renderer
 // draws the frame. 给使用者的基本概念： Mesh 是形状，GameObject 是物体，Camera
@@ -303,22 +330,24 @@ class ConvexCollider : public Collider
 {
  public:
    ConvexCollider();
-   explicit ConvexCollider(const Mesh &mesh);
+   explicit ConvexCollider(const Mesh &mesh, ConvexBuildMode mode);
    ~ConvexCollider();
 
-    bool BuildFromMesh(const Mesh &mesh);
+   bool BuildFromMesh(const Mesh &mesh, ConvexBuildMode mode);
+   int32_t GetPartCount() const;
 
  private:
    friend class PhysicsScene;
    friend class Detail::ColliderAccess;
 
-   float3 *m_vertices;
-   int32_t m_vertexCount;
-   float3 *m_faceAxes;
-   int32_t m_faceAxisCount;
-   float3 *m_edgeAxes;
-   int32_t m_edgeAxisCount;
-    void Clear();
+   struct ConvexFeatureCache {
+      ConvexBuildData buildData;
+   };
+
+   ConvexFeatureCache m_cache;
+   bool               m_hasBuild;
+
+   void Clear();
 
    ConvexCollider(const ConvexCollider &)            = delete;
    ConvexCollider &operator=(const ConvexCollider &) = delete;

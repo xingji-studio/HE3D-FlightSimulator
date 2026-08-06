@@ -60,8 +60,8 @@ static void DynamicSatAndConvexCachesGenerateContacts()
    int count = HE3D::GenerateInternalContacts(upperShape, lowerShape, contacts, 4);
    Check(count > 0 && count <= 4, "box SAT generates capped dynamic contacts");
 
-   HE3D::ConvexCollider lowerConvex(cubeMeshA);
-   HE3D::ConvexCollider upperConvex(cubeMeshB);
+    HE3D::ConvexCollider lowerConvex(cubeMeshA, HE3D::ConvexBuildMode::SingleHull);
+    HE3D::ConvexCollider upperConvex(cubeMeshB, HE3D::ConvexBuildMode::SingleHull);
    lowerShape = HE3D::Detail::ColliderAccess::From(lower, lowerConvex);
    upperShape = HE3D::Detail::ColliderAccess::From(upper, upperConvex);
    count      = HE3D::GenerateInternalContacts(upperShape, lowerShape, contacts, 4);

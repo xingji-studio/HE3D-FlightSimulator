@@ -1,4 +1,4 @@
-#include "he3d_internal.hpp"
+#include "he3d_convex_builder.hpp"
 
 namespace HE3D
 {
@@ -224,27 +224,19 @@ float Collider::EstimateDamping(float mass) const
    return EstimateBoundsDamping(LocalAABB(), mass);
 }
 
-ConvexCollider::ConvexCollider()
-    : Collider(ColliderKind::Convex), m_vertices(nullptr), m_vertexCount(0), m_faceAxes(nullptr),
-      m_faceAxisCount(0), m_edgeAxes(nullptr), m_edgeAxisCount(0)
-{
-}
+ConvexCollider::ConvexCollider() : Collider(ColliderKind::Convex), m_cache(), m_hasBuild(false) {}
 
-ConvexCollider::ConvexCollider(const Mesh &mesh) : ConvexCollider() { BuildFromMesh(mesh); }
+ConvexCollider::ConvexCollider(const Mesh &mesh, ConvexBuildMode mode) : ConvexCollider()
+{
+   BuildFromMesh(mesh, mode);
+}
 
 ConvexCollider::~ConvexCollider() { Clear(); }
 
 void ConvexCollider::Clear()
 {
-   delete[] m_vertices;
-   delete[] m_faceAxes;
-   delete[] m_edgeAxes;
-   m_vertices      = nullptr;
-   m_vertexCount   = 0;
-   m_faceAxes      = nullptr;
-   m_faceAxisCount = 0;
-   m_edgeAxes      = nullptr;
-   m_edgeAxisCount = 0;
+   m_cache    = ConvexFeatureCache();
+   m_hasBuild = false;
    SetColliderState(false, AABB());
 }
 
@@ -267,83 +259,24 @@ static bool AddUniqueDirection(float3 *directions, int32_t *count, int32_t capac
    return true;
 }
 
-bool ConvexCollider::BuildFromMesh(const Mesh &mesh)
+int32_t ConvexCollider::GetPartCount() const
 {
-   Clear();
-   if (!mesh.IsValid() || mesh.GetVertexCount() < 12 || (mesh.GetVertexCount() % 3) != 0) {
+   return m_hasBuild ? m_cache.buildData.partCount : 0;
+}
+
+bool ConvexCollider::BuildFromMesh(const Mesh &mesh, ConvexBuildMode mode)
+{
+   ConvexBuildData buildData;
+   if (!ConvexBuilder::Build(mesh, mode, buildData) || buildData.partCount != 1) {
       return false;
    }
 
-   const int32_t meshVertexCount = mesh.GetVertexCount();
-   const float3 *meshVertices    = mesh.GetVertices();
-   m_vertices                    = new float3[meshVertexCount];
-   m_faceAxes                    = new float3[meshVertexCount / 3];
-   m_edgeAxes                    = new float3[meshVertexCount];
-   if (!m_vertices || !m_faceAxes || !m_edgeAxes) {
-      Clear();
-      return false;
-   }
-
-   for (int32_t i = 0; i < meshVertexCount; i++) {
-      bool duplicate = false;
-      for (int32_t j = 0; j < m_vertexCount; j++) {
-         if (PointsNear(meshVertices[i], m_vertices[j])) {
-            duplicate = true;
-            break;
-         }
-      }
-      if (!duplicate) {
-         m_vertices[m_vertexCount++] = meshVertices[i];
-      }
-   }
-   if (m_vertexCount < 4) {
-      Clear();
-      return false;
-   }
-
-    m_localBounds   = AABB(m_vertices[0], m_vertices[0]);
-   float3 centroid = {0, 0, 0};
-   for (int32_t i = 0; i < m_vertexCount; i++) {
-      IncludePoint(m_localBounds, m_vertices[i]);
-      centroid = centroid + m_vertices[i];
-   }
-   centroid    = centroid / static_cast<float>(m_vertexCount);
-   float3 size = m_localBounds.max - m_localBounds.min;
-   if (size.x <= 0.0001f || size.y <= 0.0001f || size.z <= 0.0001f) {
-      Clear();
-      return false;
-   }
-
-   for (int32_t triangle = 0; triangle < meshVertexCount; triangle += 3) {
-      float3 a      = meshVertices[triangle];
-      float3 b      = meshVertices[triangle + 1];
-      float3 c      = meshVertices[triangle + 2];
-      float3 normal = float3::cross(b - a, c - a);
-      if (normal.lengthSq() <= 0.0000001f) {
-         Clear();
-         return false;
-      }
-      normal            = normal.normalizeFast();
-      float3 faceCenter = (a + b + c) / 3.0f;
-      if (float3::dot(normal, faceCenter - centroid) < 0.0f) {
-         normal = -normal;
-      }
-
-      if (!AddUniqueDirection(m_faceAxes, &m_faceAxisCount, meshVertexCount / 3, normal) ||
-          !AddUniqueDirection(m_edgeAxes, &m_edgeAxisCount, meshVertexCount, b - a) ||
-          !AddUniqueDirection(m_edgeAxes, &m_edgeAxisCount, meshVertexCount, c - b) ||
-          !AddUniqueDirection(m_edgeAxes, &m_edgeAxisCount, meshVertexCount, a - c)) {
-         Clear();
-         return false;
-      }
-   }
-
-    bool valid = m_faceAxisCount >= 3 && m_edgeAxisCount >= 3;
-    if (!valid) {
-       Clear();
-    }
-    if (valid) SetColliderState(true, m_localBounds);
-    return valid;
+   ConvexFeatureCache next;
+   next.buildData = buildData;
+   m_cache        = next;
+   m_hasBuild     = true;
+   SetColliderState(true, buildData.bounds);
+   return true;
 }
 
 MeshCollider::MeshCollider(const Mesh &mesh) : Collider(ColliderKind::Mesh), m_mesh(&mesh)
@@ -394,12 +327,12 @@ InternalContactShape Detail::ColliderAccess::From(const GameObject     &object,
    shape.object        = &object;
    shape.localCenter   = (collider.m_localBounds.min + collider.m_localBounds.max) * 0.5f;
    shape.halfExtents   = (collider.m_localBounds.max - collider.m_localBounds.min) * 0.5f;
-   shape.vertices      = collider.m_vertices;
-   shape.vertexCount   = collider.m_vertexCount;
-   shape.faceAxes      = collider.m_faceAxes;
-   shape.faceAxisCount = collider.m_faceAxisCount;
-   shape.edgeAxes      = collider.m_edgeAxes;
-   shape.edgeAxisCount = collider.m_edgeAxisCount;
+   shape.vertices      = collider.m_cache.buildData.parts[0].vertices;
+   shape.vertexCount   = collider.m_cache.buildData.parts[0].vertexCount;
+   shape.faceAxes      = collider.m_cache.buildData.parts[0].faceAxes;
+   shape.faceAxisCount = collider.m_cache.buildData.parts[0].faceAxisCount;
+   shape.edgeAxes      = collider.m_cache.buildData.parts[0].edgeAxes;
+   shape.edgeAxisCount = collider.m_cache.buildData.parts[0].edgeAxisCount;
    shape.mesh          = nullptr;
    shape.localBounds   = collider.m_localBounds;
    return shape;

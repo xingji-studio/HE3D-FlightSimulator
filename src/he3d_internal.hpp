@@ -42,6 +42,9 @@ struct InternalContactShape {
    AABB              localBounds;
 };
 
+struct ConvexBuildPart;
+struct ConvexBuildData;
+
 namespace Detail
 {
 

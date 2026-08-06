@@ -162,15 +162,16 @@ static void ColliderAndPhysicsSceneUseNewApi()
    HE3D::BoxCollider       box(1.0f, 1.0f, 1.0f);
    HE3D::BoxCollider       invalidBox(0.0f, 1.0f, 1.0f);
    HE3D::MeshCollider      floorCollider(floorMesh);
-   HE3D::ConvexCollider    convex(cubeMesh);
+    HE3D::ConvexCollider    convex(cubeMesh, HE3D::ConvexBuildMode::SingleHull);
    HE3D::PhysicsMaterial   floorMaterial;
    HE3D::PhysicsProperties properties;
    Check(box.IsValid() && box.GetKind() == HE3D::ColliderKind::Box,
          "BoxCollider exposes the common Collider contract");
    Check(!invalidBox.IsValid() && !invalidBox.SetSize(-1.0f, 1.0f, 1.0f),
          "BoxCollider rejects invalid dimensions");
-   Check(convex.IsValid() && convex.GetKind() == HE3D::ColliderKind::Convex,
-         "ConvexCollider builds a valid collider");
+    Check(convex.IsValid() && convex.GetKind() == HE3D::ColliderKind::Convex,
+          "ConvexCollider builds a valid collider");
+    Check(convex.GetPartCount() == 1, "ConvexCollider exposes a single build part");
    Check(floorCollider.IsValid() && floorCollider.GetKind() == HE3D::ColliderKind::Mesh,
          "MeshCollider owns a valid borrowed-mesh view");
    floorMesh = HE3D::Mesh::CreatePlane(5.0f, 5.0f);
