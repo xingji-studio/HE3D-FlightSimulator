@@ -17,6 +17,12 @@ struct PhysicsRuntimeState {
    }
 };
 
+struct PhysicsBodySnapshot {
+   float3              position;
+   quat                orientation;
+   PhysicsRuntimeState runtime;
+};
+
 struct PhysicsSceneEntry {
    GameObject         *object;
    PhysicsProperties  *properties;
@@ -26,30 +32,42 @@ struct PhysicsSceneEntry {
    PhysicsRuntimeState runtime;
 
    PhysicsSceneEntry()
-        : object(nullptr), properties(nullptr), material(nullptr), collider(nullptr),
-          motion(PhysicsMotionType::Static), runtime()
+       : object(nullptr), properties(nullptr), material(nullptr), collider(nullptr),
+         motion(PhysicsMotionType::Static), runtime()
    {
    }
 };
 
 struct PhysicsSceneState {
-   PhysicsSceneEntry *entries;
-   int32_t            entryCount;
-   int32_t            entryCapacity;
-   float3             gravity;
-   float               drag;
+   PhysicsSceneEntry   *entries;
+   int32_t              entryCount;
+   int32_t              entryCapacity;
+   float3               gravity;
+   float                drag;
+   PhysicsBodySnapshot *snapshots;
 
    explicit PhysicsSceneState(int32_t capacity)
-        : entries(nullptr), entryCount(0), entryCapacity(0), gravity{0, -9.8f, 0}, drag(0.02f)
+       : entries(nullptr), entryCount(0), entryCapacity(0), gravity{0, -9.8f, 0}, drag(0.02f),
+         snapshots(nullptr)
    {
-       if (capacity < 1) return;
-      entries = new PhysicsSceneEntry[capacity];
-      if (entries) {
+      if (capacity < 1) return;
+      entries   = new PhysicsSceneEntry[capacity];
+      snapshots = new PhysicsBodySnapshot[capacity];
+      if (entries && snapshots) {
          entryCapacity = capacity;
+      } else {
+         delete[] entries;
+         delete[] snapshots;
+         entries   = nullptr;
+         snapshots = nullptr;
       }
    }
 
-   ~PhysicsSceneState() { delete[] entries; }
+   ~PhysicsSceneState()
+   {
+      delete[] snapshots;
+      delete[] entries;
+   }
 
    bool HasCapacity() const { return entryCount < entryCapacity; }
 
@@ -96,6 +114,18 @@ static bool IsFiniteFloat3(float3 value)
    return IsFiniteFloat(value.x) && IsFiniteFloat(value.y) && IsFiniteFloat(value.z);
 }
 
+static bool IsFiniteQuat(quat value)
+{
+   return IsFiniteFloat(value.w) && IsFiniteFloat(value.x) && IsFiniteFloat(value.y) &&
+          IsFiniteFloat(value.z);
+}
+
+static bool IsNormalizedQuat(quat value)
+{
+   float lengthSq = value.w * value.w + value.x * value.x + value.y * value.y + value.z * value.z;
+   return IsFiniteQuat(value) && HE3D_ABS(lengthSq - 1.0f) <= 0.001f;
+}
+
 PhysicsMaterial::PhysicsMaterial() : m_friction(0.5f), m_restitution(0.0f) {}
 
 float PhysicsMaterial::GetFriction() const { return m_friction; }
@@ -120,9 +150,9 @@ PhysicsProperties::PhysicsProperties()
 {
 }
 
-float PhysicsProperties::GetMass() const { return m_mass; }
-float3 PhysicsProperties::GetInertia() const { return m_inertia; }
-float PhysicsProperties::GetDamping() const { return m_damping; }
+float                  PhysicsProperties::GetMass() const { return m_mass; }
+float3                 PhysicsProperties::GetInertia() const { return m_inertia; }
+float                  PhysicsProperties::GetDamping() const { return m_damping; }
 const PhysicsMaterial &PhysicsProperties::GetMaterial() const { return m_material; }
 
 PhysicsSettingResult PhysicsProperties::SetMass(float value)
@@ -154,9 +184,7 @@ PhysicsSettingResult PhysicsProperties::SetDamping(float value)
 
 void PhysicsProperties::SetMaterial(const PhysicsMaterial &value) { m_material = value; }
 
-PhysicsScene::PhysicsScene(int32_t capacity) : m_impl(new PhysicsSceneState(capacity))
-{
-}
+PhysicsScene::PhysicsScene(int32_t capacity) : m_impl(new PhysicsSceneState(capacity)) {}
 
 PhysicsScene::~PhysicsScene() { delete m_impl; }
 
@@ -167,9 +195,11 @@ void PhysicsScene::Clear()
    }
 }
 
-static bool IsDynamicKind(PhysicsMotionType motion)
+static bool IsDynamicKind(PhysicsMotionType motion) { return motion == PhysicsMotionType::Dynamic; }
+
+static bool HasRuntimeMotion(PhysicsMotionType motion)
 {
-   return motion == PhysicsMotionType::Dynamic;
+   return motion == PhysicsMotionType::Dynamic || motion == PhysicsMotionType::Kinematic;
 }
 
 static float InverseMass(const PhysicsSceneEntry *entry)
@@ -195,7 +225,7 @@ static bool AddBody(PhysicsSceneState *scene, GameObject &object, Collider &coll
                     PhysicsMaterial *material)
 {
    if (!scene || !collider.IsValid() || !scene->HasCapacity() || scene->Find(object) ||
-       !IsFiniteFloat3(object.position) ||
+       !IsFiniteFloat3(object.position) || !IsNormalizedQuat(object.orientation) ||
        (motion == PhysicsMotionType::Dynamic && collider.GetKind() == ColliderKind::Mesh)) {
       return false;
    }
@@ -217,13 +247,13 @@ bool PhysicsScene::AddStaticBody(GameObject &object, Collider &collider, Physics
 }
 
 bool PhysicsScene::AddKinematicBody(GameObject &object, Collider &collider,
-                                     PhysicsMaterial &material)
+                                    PhysicsMaterial &material)
 {
    return AddBody(m_impl, object, collider, PhysicsMotionType::Kinematic, nullptr, &material);
 }
 
 bool PhysicsScene::AddDynamicBody(GameObject &object, Collider &collider,
-                                   PhysicsProperties &properties)
+                                  PhysicsProperties &properties)
 {
    return AddBody(m_impl, object, collider, PhysicsMotionType::Dynamic, &properties, nullptr);
 }
@@ -272,19 +302,20 @@ float PhysicsScene::GetDrag() const { return m_impl ? m_impl->drag : 0.0f; }
 float3 PhysicsScene::GetVelocity(const GameObject &object) const
 {
    const PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
-   return entry && IsDynamicKind(entry->motion) ? entry->runtime.velocity : float3(0, 0, 0);
+   return entry && HasRuntimeMotion(entry->motion) ? entry->runtime.velocity : float3(0, 0, 0);
 }
 
 float3 PhysicsScene::GetAngularVelocity(const GameObject &object) const
 {
    const PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
-   return entry && IsDynamicKind(entry->motion) ? entry->runtime.angularVelocity : float3(0, 0, 0);
+   return entry && HasRuntimeMotion(entry->motion) ? entry->runtime.angularVelocity
+                                                   : float3(0, 0, 0);
 }
 
 bool PhysicsScene::SetVelocity(GameObject &object, const float3 &velocity)
 {
    PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
-   if (!entry || !IsDynamicKind(entry->motion) || !IsFiniteFloat3(velocity)) {
+   if (!entry || !HasRuntimeMotion(entry->motion) || !IsFiniteFloat3(velocity)) {
       return false;
    }
    entry->runtime.velocity = velocity;
@@ -294,7 +325,7 @@ bool PhysicsScene::SetVelocity(GameObject &object, const float3 &velocity)
 bool PhysicsScene::SetAngularVelocity(GameObject &object, const float3 &angularVelocity)
 {
    PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
-   if (!entry || !IsDynamicKind(entry->motion) || !IsFiniteFloat3(angularVelocity)) {
+   if (!entry || !HasRuntimeMotion(entry->motion) || !IsFiniteFloat3(angularVelocity)) {
       return false;
    }
    entry->runtime.angularVelocity = angularVelocity;
@@ -307,7 +338,9 @@ bool PhysicsScene::AddForce(GameObject &object, const float3 &force)
    if (!entry || !IsDynamicKind(entry->motion) || !IsFiniteFloat3(force)) {
       return false;
    }
-   entry->runtime.force = entry->runtime.force + force;
+   float3 accumulated = entry->runtime.force + force;
+   if (!IsFiniteFloat3(accumulated)) return false;
+   entry->runtime.force = accumulated;
    return true;
 }
 
@@ -317,7 +350,9 @@ bool PhysicsScene::AddTorque(GameObject &object, const float3 &torque)
    if (!entry || !IsDynamicKind(entry->motion) || !IsFiniteFloat3(torque)) {
       return false;
    }
-   entry->runtime.torque = entry->runtime.torque + torque;
+   float3 accumulated = entry->runtime.torque + torque;
+   if (!IsFiniteFloat3(accumulated)) return false;
+   entry->runtime.torque = accumulated;
    return true;
 }
 
@@ -327,7 +362,10 @@ bool PhysicsScene::AddImpulse(GameObject &object, const float3 &impulse)
    if (!entry || !IsDynamicKind(entry->motion)) {
       return false;
    }
-   entry->runtime.velocity = entry->runtime.velocity + impulse * InverseMass(entry);
+   if (!IsFiniteFloat3(impulse)) return false;
+   float3 velocity = entry->runtime.velocity + impulse * InverseMass(entry);
+   if (!IsFiniteFloat3(velocity)) return false;
+   entry->runtime.velocity = velocity;
    return true;
 }
 
@@ -337,22 +375,34 @@ bool PhysicsScene::AddAngularImpulse(GameObject &object, const float3 &impulse)
    if (!entry || !IsDynamicKind(entry->motion)) {
       return false;
    }
-   entry->runtime.angularVelocity =
-       entry->runtime.angularVelocity + impulse * InverseInertia(entry);
+   if (!IsFiniteFloat3(impulse)) return false;
+   float3 angularVelocity = entry->runtime.angularVelocity + impulse * InverseInertia(entry);
+   if (!IsFiniteFloat3(angularVelocity)) return false;
+   entry->runtime.angularVelocity = angularVelocity;
    return true;
 }
 
-static void IntegrateSceneEntry(PhysicsSceneEntry &entry, float deltaTime, float sceneDrag,
+static bool IntegrateSceneEntry(PhysicsSceneEntry &entry, float deltaTime, float sceneDrag,
                                 float3 gravity)
 {
-   if (!entry.object || !entry.properties || !IsDynamicKind(entry.motion) || deltaTime <= 0.0f) {
-      return;
+   if (!entry.object || deltaTime <= 0.0f) {
+      return true;
    }
 
-   float  inverseMass     = InverseMass(&entry);
-   float  inverseInertia  = InverseInertia(&entry);
-   float3 totalForce      = entry.runtime.force + gravity * entry.properties->GetMass();
-   entry.runtime.velocity = entry.runtime.velocity + totalForce * inverseMass * deltaTime;
+   if (entry.motion == PhysicsMotionType::Kinematic) {
+      entry.object->position    = entry.object->position + entry.runtime.velocity * deltaTime;
+      quat dq                   = quat(1.0f, 0.5f * entry.runtime.angularVelocity.x * deltaTime,
+                                       0.5f * entry.runtime.angularVelocity.y * deltaTime,
+                                       0.5f * entry.runtime.angularVelocity.z * deltaTime);
+      entry.object->orientation = (entry.object->orientation * dq).normalizeFast();
+      return IsFiniteFloat3(entry.object->position) && IsNormalizedQuat(entry.object->orientation);
+   }
+   if (!entry.properties || !IsDynamicKind(entry.motion)) return true;
+
+   float inverseMass    = InverseMass(&entry);
+   float inverseInertia = InverseInertia(&entry);
+   entry.runtime.velocity =
+       entry.runtime.velocity + (entry.runtime.force * inverseMass + gravity) * deltaTime;
    entry.runtime.angularVelocity =
        entry.runtime.angularVelocity + entry.runtime.torque * inverseInertia * deltaTime;
 
@@ -375,11 +425,13 @@ static void IntegrateSceneEntry(PhysicsSceneEntry &entry, float deltaTime, float
                                     0.5f * entry.runtime.angularVelocity.y * deltaTime,
                                     0.5f * entry.runtime.angularVelocity.z * deltaTime);
    entry.object->orientation = (entry.object->orientation * dq).normalizeFast();
+   return IsFiniteFloat3(entry.object->position) && IsNormalizedQuat(entry.object->orientation) &&
+          IsFiniteFloat3(entry.runtime.velocity) && IsFiniteFloat3(entry.runtime.angularVelocity);
 }
 
 static float3 EntryVelocityAtPoint(const PhysicsSceneEntry *entry, float3 point)
 {
-    if (!entry || !entry->object || !IsDynamicKind(entry->motion)) {
+   if (!entry || !entry->object || !IsDynamicKind(entry->motion)) {
       return {0, 0, 0};
    }
    float3 r = point - entry->object->position;
@@ -388,7 +440,7 @@ static float3 EntryVelocityAtPoint(const PhysicsSceneEntry *entry, float3 point)
 
 static void ApplySceneImpulse(PhysicsSceneEntry *entry, float3 point, float3 impulse)
 {
-    if (!entry || !entry->object || !IsDynamicKind(entry->motion)) {
+   if (!entry || !entry->object || !IsDynamicKind(entry->motion)) {
       return;
    }
    entry->runtime.velocity = entry->runtime.velocity + impulse * InverseMass(entry);
@@ -397,18 +449,26 @@ static void ApplySceneImpulse(PhysicsSceneEntry *entry, float3 point, float3 imp
        entry->runtime.angularVelocity + float3::cross(r, impulse) * InverseInertia(entry);
 }
 
-static void ResolveSceneContact(PhysicsSceneEntry &entryA, PhysicsSceneEntry &entryB,
+static const PhysicsMaterial &EntryMaterial(const PhysicsSceneEntry &entry)
+{
+   if (entry.properties) return entry.properties->GetMaterial();
+   if (entry.material) return *entry.material;
+   static PhysicsMaterial fallback;
+   return fallback;
+}
+
+static bool ResolveSceneContact(PhysicsSceneEntry &entryA, PhysicsSceneEntry &entryB,
                                 const InternalContact &contact)
 {
    if (!contact.hit || contact.penetration <= 0.0f) {
-      return;
+      return true;
    }
 
    float invMassA   = InverseMass(&entryA);
    float invMassB   = InverseMass(&entryB);
    float invMassSum = invMassA + invMassB;
    if (invMassSum <= 0.0f) {
-      return;
+      return true;
    }
 
    const float slop            = 0.0005f;
@@ -440,13 +500,13 @@ static void ResolveSceneContact(PhysicsSceneEntry &entryA, PhysicsSceneEntry &en
       inertiaTerm += rbCrossN.lengthSq() * InverseInertia(&entryB);
    }
    if (inertiaTerm <= 0.000001f) {
-      return;
+      return true;
    }
 
    float impulseMagnitude = 0.0f;
    if (normalVelocity < 0.0f) {
-      float restitutionA = entryA.properties ? entryA.properties->GetMaterial().GetRestitution() : 0.0f;
-      float restitutionB = entryB.properties ? entryB.properties->GetMaterial().GetRestitution() : 0.0f;
+      float restitutionA = EntryMaterial(entryA).GetRestitution();
+      float restitutionB = EntryMaterial(entryB).GetRestitution();
       float restitution  = restitutionA > restitutionB ? restitutionA : restitutionB;
       if (-normalVelocity < 0.35f) {
          restitution = 0.0f;
@@ -457,8 +517,8 @@ static void ResolveSceneContact(PhysicsSceneEntry &entryA, PhysicsSceneEntry &en
       ApplySceneImpulse(&entryB, contact.point, -normalImpulse);
    }
 
-   float frictionA = entryA.properties ? entryA.properties->GetMaterial().GetFriction() : 0.5f;
-   float frictionB = entryB.properties ? entryB.properties->GetMaterial().GetFriction() : 0.5f;
+   float frictionA = EntryMaterial(entryA).GetFriction();
+   float frictionB = EntryMaterial(entryB).GetFriction();
    float friction  = (frictionA + frictionB) * 0.5f;
    relativeVelocity =
        EntryVelocityAtPoint(&entryA, contact.point) - EntryVelocityAtPoint(&entryB, contact.point);
@@ -476,6 +536,12 @@ static void ResolveSceneContact(PhysicsSceneEntry &entryA, PhysicsSceneEntry &en
       ApplySceneImpulse(&entryA, contact.point, frictionImpulse);
       ApplySceneImpulse(&entryB, contact.point, -frictionImpulse);
    }
+   return (!entryA.object ||
+           (IsFiniteFloat3(entryA.object->position) && IsFiniteFloat3(entryA.runtime.velocity) &&
+            IsFiniteFloat3(entryA.runtime.angularVelocity))) &&
+          (!entryB.object ||
+           (IsFiniteFloat3(entryB.object->position) && IsFiniteFloat3(entryB.runtime.velocity) &&
+            IsFiniteFloat3(entryB.runtime.angularVelocity)));
 }
 
 namespace Detail
@@ -520,62 +586,96 @@ static bool TryBuildContactShape(const PhysicsSceneEntry &entry, InternalContact
 class PhysicsStepper
 {
  public:
-   static void Step(PhysicsSceneState *scene, float sceneDrag, float deltaTime, int32_t iterations)
+   static PhysicsStepResult Step(PhysicsSceneState *scene, float sceneDrag, float deltaTime,
+                                 int32_t iterations)
    {
-      if (!scene || deltaTime <= 0.0f) {
-         return;
+      if (!scene || !scene->snapshots || !IsFiniteFloat(deltaTime) || deltaTime <= 0.0f ||
+          iterations < 1 || iterations > 16) {
+         return PhysicsStepResult::InvalidInput;
       }
-
-      if (iterations < 1) iterations = 1;
-      if (iterations > 16) iterations = 16;
-
-      IntegrateBodies(scene, sceneDrag, deltaTime);
-      ResolveContacts(scene, iterations);
+      if (!CaptureAndValidate(scene)) return PhysicsStepResult::InvalidBodyState;
+      if (!IntegrateBodies(scene, sceneDrag, deltaTime) || !ResolveContacts(scene, iterations)) {
+         Restore(scene);
+         return PhysicsStepResult::InvalidBodyState;
+      }
       ClearBodyAccumulators(scene);
+      return PhysicsStepResult::Completed;
    }
 
  private:
-   static void IntegrateBodies(PhysicsSceneState *scene, float sceneDrag, float deltaTime)
+   static bool CaptureAndValidate(PhysicsSceneState *scene)
    {
       for (int32_t i = 0; i < scene->entryCount; i++) {
-         IntegrateSceneEntry(scene->entries[i], deltaTime, sceneDrag, scene->gravity);
+         PhysicsSceneEntry &entry = scene->entries[i];
+         if (!entry.object || !IsFiniteFloat3(entry.object->position) ||
+             !IsNormalizedQuat(entry.object->orientation) ||
+             !IsFiniteFloat3(entry.runtime.velocity) ||
+             !IsFiniteFloat3(entry.runtime.angularVelocity) ||
+             !IsFiniteFloat3(entry.runtime.force) || !IsFiniteFloat3(entry.runtime.torque))
+            return false;
+         scene->snapshots[i].position    = entry.object->position;
+         scene->snapshots[i].orientation = entry.object->orientation;
+         scene->snapshots[i].runtime     = entry.runtime;
+      }
+      return true;
+   }
+
+   static void Restore(PhysicsSceneState *scene)
+   {
+      for (int32_t i = 0; i < scene->entryCount; i++) {
+         scene->entries[i].object->position    = scene->snapshots[i].position;
+         scene->entries[i].object->orientation = scene->snapshots[i].orientation;
+         scene->entries[i].runtime             = scene->snapshots[i].runtime;
       }
    }
 
-   static void ResolveContacts(PhysicsSceneState *scene, int32_t iterations)
+   static bool IntegrateBodies(PhysicsSceneState *scene, float sceneDrag, float deltaTime)
+   {
+      for (int32_t i = 0; i < scene->entryCount; i++) {
+         if (!IntegrateSceneEntry(scene->entries[i], deltaTime, sceneDrag, scene->gravity))
+            return false;
+      }
+      return true;
+   }
+
+   static bool ResolveContacts(PhysicsSceneState *scene, int32_t iterations)
    {
       for (int32_t iter = 0; iter < iterations; iter++) {
          for (int32_t a = 0; a < scene->entryCount; a++) {
             for (int32_t b = a + 1; b < scene->entryCount; b++) {
-               ResolveEntryPair(scene->entries[a], scene->entries[b]);
+               if (!ResolveEntryPair(scene->entries[a], scene->entries[b])) {
+                  return false;
+               }
             }
          }
       }
+      return true;
    }
 
-   static void ResolveEntryPair(PhysicsSceneEntry &entryA, PhysicsSceneEntry &entryB)
+   static bool ResolveEntryPair(PhysicsSceneEntry &entryA, PhysicsSceneEntry &entryB)
    {
-       if (!IsDynamicKind(entryA.motion) && !IsDynamicKind(entryB.motion)) {
-         return;
+      if (!IsDynamicKind(entryA.motion) && !IsDynamicKind(entryB.motion)) {
+         return true;
       }
 
       InternalContactShape shapeA;
       InternalContactShape shapeB;
       if (!TryBuildContactShape(entryA, &shapeA) || !TryBuildContactShape(entryB, &shapeB)) {
-         return;
+         return true;
       }
 
       InternalContact contacts[8];
       int32_t         count = GenerateInternalContacts(shapeA, shapeB, contacts, 8);
       for (int32_t c = 0; c < count; c++) {
-         ResolveSceneContact(entryA, entryB, contacts[c]);
+         if (!ResolveSceneContact(entryA, entryB, contacts[c])) return false;
       }
+      return true;
    }
 
    static void ClearBodyAccumulators(PhysicsSceneState *scene)
    {
       for (int32_t i = 0; i < scene->entryCount; i++) {
-          if (IsDynamicKind(scene->entries[i].motion)) {
+         if (IsDynamicKind(scene->entries[i].motion)) {
             scene->entries[i].runtime.force  = {0, 0, 0};
             scene->entries[i].runtime.torque = {0, 0, 0};
          }
@@ -585,16 +685,35 @@ class PhysicsStepper
 
 } // namespace Detail
 
-void PhysicsScene::Step(float deltaTime, int32_t iterations)
+PhysicsStepResult PhysicsScene::Step(float deltaTime, int32_t iterations)
 {
-   Detail::PhysicsStepper::Step(m_impl, GetDrag(), deltaTime, iterations);
+   return Detail::PhysicsStepper::Step(m_impl, GetDrag(), deltaTime, iterations);
 }
 
 int32_t PhysicsScene::GetContacts(const GameObject &object, PhysicsContact *output,
                                   int32_t capacity) const
 {
-   if (!m_impl || !m_impl->Find(object) || !output || capacity <= 0) return 0;
-   return 0;
+   PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
+   if (!entry || !output || capacity <= 0) return 0;
+   InternalContactShape shape;
+   if (!Detail::TryBuildContactShape(*entry, &shape)) return 0;
+   int32_t written = 0;
+   for (int32_t i = 0; i < m_impl->entryCount && written < capacity; i++) {
+      const PhysicsSceneEntry &other = m_impl->entries[i];
+      if (&other == entry) continue;
+      InternalContactShape otherShape;
+      if (!Detail::TryBuildContactShape(other, &otherShape)) continue;
+      InternalContact contacts[8];
+      int32_t         count = GenerateInternalContacts(shape, otherShape, contacts, 8);
+      for (int32_t contact = 0; contact < count && written < capacity; contact++) {
+         output[written].penetration = contacts[contact].penetration;
+         output[written].normal      = contacts[contact].normal;
+         output[written].point       = contacts[contact].point;
+         output[written].other       = other.object;
+         written++;
+      }
+   }
+   return written;
 }
 
 } // namespace HE3D

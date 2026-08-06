@@ -1,5 +1,6 @@
 #include "he3d.hpp"
 
+#include <cfloat>
 #include <cstdio>
 
 static int g_failures = 0;
@@ -18,6 +19,8 @@ static bool Near(float a, float b, float tolerance)
    if (d < 0.0f) d = -d;
    return d <= tolerance;
 }
+
+static bool Finite(float value) { return value >= -FLT_MAX && value <= FLT_MAX; }
 
 static void MeshValuesAndRaycastsWork()
 {
@@ -118,15 +121,15 @@ static void TextureCreateCopiesPixelsAndLoadImageUsesHeaders()
 
 static void ColliderAndPhysicsSceneUseNewApi()
 {
-   HE3D::Mesh cubeMesh = HE3D::Mesh::CreateCube(1.0f, 1.0f, 1.0f);
-   HE3D::Mesh floorMesh = HE3D::Mesh::CreatePlane(4.0f, 4.0f);
-   HE3D::GameObject cube(cubeMesh);
-   HE3D::GameObject floor(floorMesh);
-   HE3D::BoxCollider box(1.0f, 1.0f, 1.0f);
-   HE3D::BoxCollider invalidBox(0.0f, 1.0f, 1.0f);
-   HE3D::MeshCollider floorCollider(floorMesh);
-   HE3D::ConvexCollider convex(cubeMesh);
-   HE3D::PhysicsMaterial floorMaterial;
+   HE3D::Mesh              cubeMesh  = HE3D::Mesh::CreateCube(1.0f, 1.0f, 1.0f);
+   HE3D::Mesh              floorMesh = HE3D::Mesh::CreatePlane(4.0f, 4.0f);
+   HE3D::GameObject        cube(cubeMesh);
+   HE3D::GameObject        floor(floorMesh);
+   HE3D::BoxCollider       box(1.0f, 1.0f, 1.0f);
+   HE3D::BoxCollider       invalidBox(0.0f, 1.0f, 1.0f);
+   HE3D::MeshCollider      floorCollider(floorMesh);
+   HE3D::ConvexCollider    convex(cubeMesh);
+   HE3D::PhysicsMaterial   floorMaterial;
    HE3D::PhysicsProperties properties;
    Check(box.IsValid() && box.GetKind() == HE3D::ColliderKind::Box,
          "BoxCollider exposes the common Collider contract");
@@ -138,7 +141,8 @@ static void ColliderAndPhysicsSceneUseNewApi()
          "MeshCollider owns a valid borrowed-mesh view");
    floorMesh = HE3D::Mesh::CreatePlane(5.0f, 5.0f);
    floorCollider.Refresh();
-   Check(floorCollider.IsValid(), "MeshCollider refreshes after its borrowed mesh lifecycle changes");
+   Check(floorCollider.IsValid(),
+         "MeshCollider refreshes after its borrowed mesh lifecycle changes");
    Check(properties.SetMass(2.0f) == HE3D::PhysicsSettingResult::Applied &&
              properties.SetMass(0.0f) == HE3D::PhysicsSettingResult::Rejected &&
              properties.SetInertia(box.EstimateInertia(2.0f)) == HE3D::PhysicsSettingResult::Applied,
@@ -163,11 +167,25 @@ static void ColliderAndPhysicsSceneUseNewApi()
              scene.AddForce(cube, {1.0f, 0.0f, 0.0f}) &&
              !scene.AddForce(cube, {0.0f / 0.0f, 0.0f, 0.0f}),
          "PhysicsScene rejects nonfinite runtime inputs");
+   Check(scene.AddImpulse(cube, {FLT_MAX, 0.0f, 0.0f}) &&
+             scene.AddImpulse(cube, {FLT_MAX, 0.0f, 0.0f}) &&
+             !scene.AddImpulse(cube, {FLT_MAX, 0.0f, 0.0f}),
+         "PhysicsScene preserves finite runtime state after impulse overflow");
+   scene.SetVelocity(cube, {1.0f, 0.0f, 0.0f});
    Check(!scene.AddDynamicBody(floor, floorCollider, properties),
          "PhysicsScene rejects unsupported dynamic mesh registration");
    HE3D::PhysicsContact contacts[2];
-   Check(scene.GetContacts(cube, contacts, 2) == 0,
-         "PhysicsScene contact query does not compute contacts in registration slice");
+   int                  contactCount = scene.GetContacts(cube, contacts, 2);
+   Check(contactCount > 0 && contacts[0].normal.y > 0.5f && contacts[0].other == &floor,
+         "PhysicsScene reports static triangle contacts through the public API");
+   Check(scene.Step(0.1f, 4) == HE3D::PhysicsStepResult::Completed && cube.position.x > 0.09f,
+         "PhysicsScene integrates and resolves contacts");
+   Check(scene.Step(-0.1f, 4) == HE3D::PhysicsStepResult::InvalidInput,
+         "PhysicsScene rejects invalid step input");
+   cube.position.x = 0.0f / 0.0f;
+   Check(scene.Step(0.1f, 4) == HE3D::PhysicsStepResult::InvalidBodyState,
+         "PhysicsScene rejects nonfinite body state");
+   cube.position.x = 0.1f;
    Check(scene.RemoveBody(cube) && !scene.HasBody(cube) && !scene.RemoveBody(cube),
          "PhysicsScene removes registered body exactly once");
    scene.Clear();
@@ -176,12 +194,44 @@ static void ColliderAndPhysicsSceneUseNewApi()
          "PhysicsScene rejects registration on invalid storage");
 }
 
+static void PhysicsStepRollsBackOverflow()
+{
+   HE3D::Mesh              mesh = HE3D::Mesh::CreateCube(1.0f, 1.0f, 1.0f);
+   HE3D::GameObject        body(mesh);
+   HE3D::BoxCollider       collider(1.0f, 1.0f, 1.0f);
+   HE3D::PhysicsProperties properties;
+   HE3D::PhysicsScene      scene(1);
+   scene.SetGravity({0.0f, 0.0f, 0.0f});
+   scene.SetDrag(0.0f);
+   Check(scene.AddDynamicBody(body, collider, properties) &&
+             scene.SetVelocity(body, {FLT_MAX, 0.0f, 0.0f}) &&
+             scene.Step(2.0f, 1) == HE3D::PhysicsStepResult::InvalidBodyState &&
+             body.position.x == 0.0f && Finite(scene.GetVelocity(body).x),
+         "PhysicsScene rolls back an overflowing contact-solver step");
+}
+
+static void KinematicBodiesUseSceneMotion()
+{
+   HE3D::Mesh            mesh = HE3D::Mesh::CreateCube(1.0f, 1.0f, 1.0f);
+   HE3D::GameObject      body(mesh);
+   HE3D::BoxCollider     collider(1.0f, 1.0f, 1.0f);
+   HE3D::PhysicsMaterial material;
+   HE3D::PhysicsScene    scene(1);
+   Check(scene.AddKinematicBody(body, collider, material) &&
+             scene.SetVelocity(body, {2.0f, 0.0f, 0.0f}) &&
+             scene.Step(0.25f, 1) == HE3D::PhysicsStepResult::Completed &&
+             Near(body.position.x, 0.5f, 0.0001f) && Near(scene.GetVelocity(body).x, 2.0f, 0.0001f),
+         "PhysicsScene integrates kinematic scene-owned motion");
+}
+
 int main()
 {
    MeshValuesAndRaycastsWork();
    ObjLoaderCountsVertices();
    TextureCreateCopiesPixelsAndLoadImageUsesHeaders();
    ColliderAndPhysicsSceneUseNewApi();
+   PhysicsStepRollsBackOverflow();
+   KinematicBodiesUseSceneMotion();
 
    if (g_failures == 0) {
       std::printf("he3d_public_api_tests passed\n");

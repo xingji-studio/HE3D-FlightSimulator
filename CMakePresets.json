@@ -10,7 +10,7 @@
         "HE3D_BACKEND": "CONSOLE",
         "HE3D_EXAMPLE": "TriangleTest",
         "HE3D_BUILD_TESTS": "ON",
-        "HE3D_BUILD_INTERNAL_TESTS": "OFF"
+        "HE3D_BUILD_INTERNAL_TESTS": "ON"
       }
     }
   ],

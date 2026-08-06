@@ -95,11 +95,41 @@ static void PipelineRejectsInvalidOutputsAndStaticPairs()
          "pipeline rejects zero contact capacity");
 }
 
+static void ConvexManifoldAndSolverRemainFinite()
+{
+   HE3D::Mesh              meshA = HE3D::Mesh::CreateCube(1.0f, 1.0f, 1.0f);
+   HE3D::Mesh              meshB = HE3D::Mesh::CreateCube(1.0f, 1.0f, 1.0f);
+   HE3D::GameObject        body(meshA);
+   HE3D::GameObject        floor(meshB);
+   HE3D::BoxCollider       bodyCollider(1.0f, 1.0f, 1.0f);
+   HE3D::BoxCollider       floorCollider(4.0f, 1.0f, 4.0f);
+   HE3D::PhysicsMaterial   material;
+   HE3D::PhysicsProperties properties;
+   HE3D::PhysicsScene      scene(2);
+   body.position  = {0.0f, 0.49f, 0.0f};
+   floor.position = {0.0f, -0.5f, 0.0f};
+   properties.SetMaterial(material);
+   scene.SetGravity({0.0f, 0.0f, 0.0f});
+   scene.SetDrag(0.0f);
+   HE3D::InternalContact      contacts[8];
+   HE3D::InternalContactShape bodyShape  = HE3D::Detail::ColliderAccess::From(body, bodyCollider);
+   HE3D::InternalContactShape floorShape = HE3D::Detail::ColliderAccess::From(floor, floorCollider);
+   int count = HE3D::GenerateInternalContacts(bodyShape, floorShape, contacts, 8);
+   Check(count > 0 && count <= 4, "convex pair manifold is reduced to four contacts");
+   Check(scene.AddDynamicBody(body, bodyCollider, properties) &&
+             scene.AddStaticBody(floor, floorCollider, material) &&
+             scene.SetVelocity(body, {0.5f, -1.0f, 0.0f}) &&
+             scene.Step(0.02f, 4) == HE3D::PhysicsStepResult::Completed &&
+             body.position.y > 0.49f && scene.GetVelocity(body).lengthSq() < 100.0f,
+         "solver applies finite position correction and impulses");
+}
+
 int main()
 {
    MeshContactsSeparateGapFromPenetration();
    DynamicSatAndConvexCachesGenerateContacts();
    PipelineRejectsInvalidOutputsAndStaticPairs();
+   ConvexManifoldAndSolverRemainFinite();
 
    if (g_failures == 0) {
       std::printf("he3d_internal_physics_tests passed\n");

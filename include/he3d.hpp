@@ -350,6 +350,7 @@ class MeshCollider : public Collider
 // PhysicsProperties 保存可复用的物理配置。
 // ============================================================================
 enum class PhysicsSettingResult { Applied, AppliedWithWarning, Rejected };
+enum class PhysicsStepResult { Completed, InvalidInput, InvalidBodyState };
 
 class PhysicsMaterial
 {
@@ -422,15 +423,15 @@ class PhysicsScene
     bool   AddTorque(GameObject &object, const float3 &torque);
     bool   AddImpulse(GameObject &object, const float3 &impulse);
     bool   AddAngularImpulse(GameObject &object, const float3 &impulse);
-    /// This registration-only slice does not compute contacts.
+    /// Write up to capacity current contacts for object.
     int32_t GetContacts(const GameObject &object, PhysicsContact *output, int32_t capacity) const;
 
    /// Remove all dynamic bodies and static colliders from this scene.
    /// 移除此场景中的所有动态刚体和静态碰撞体。
    void Clear();
-   /// Integrate bodies, resolve mesh contacts, and clear accumulated
-   /// force/torque. 推进刚体、解算 mesh 接触，并清空累计力/力矩。
-   void Step(float deltaTime, int32_t iterations = 4);
+   /// Integrate bodies, resolve contacts, and clear accumulated force/torque.
+   /// 推进刚体、解算接触，并清空累计力/力矩。
+   PhysicsStepResult Step(float deltaTime, int32_t iterations = 4);
 
  private:
    PhysicsSceneState *m_impl;
