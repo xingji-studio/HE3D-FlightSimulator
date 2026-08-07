@@ -550,6 +550,11 @@ namespace Detail
 static const int32_t kMaximumBodyPairContacts = 2048;
 static const int32_t kSolverManifoldContacts  = 8;
 
+struct BodyPairContact {
+   InternalContact   contact;
+   const GameObject *other;
+};
+
 static int32_t GetContactShapeCount(const PhysicsSceneEntry &entry)
 {
    if (!entry.collider || !entry.collider->IsValid()) return 0;
@@ -683,6 +688,26 @@ static void SortContacts(InternalContact *contacts, int32_t count)
    }
 }
 
+static bool ContactRecordLess(const BodyPairContact &left, const BodyPairContact &right)
+{
+   if (ContactLess(left.contact, right.contact)) return true;
+   if (ContactLess(right.contact, left.contact)) return false;
+   return left.other < right.other;
+}
+
+static void SortContactRecords(BodyPairContact *contacts, int32_t count)
+{
+   for (int32_t i = 1; i < count; i++) {
+      BodyPairContact value    = contacts[i];
+      int32_t         position = i;
+      while (position > 0 && ContactRecordLess(value, contacts[position - 1])) {
+         contacts[position] = contacts[position - 1];
+         position--;
+      }
+      contacts[position] = value;
+   }
+}
+
 static void ReduceBodyPairContacts(InternalContact *contacts, int32_t *count, int32_t capacity)
 {
    if (!contacts || !count || capacity <= 0) return;
@@ -742,11 +767,11 @@ static int32_t CollectBodyPairContacts(const PhysicsSceneEntry &entryA,
          if (!TryBuildContactShape(entryB, partB, &shapeB)) continue;
          InternalContact pairContacts[8];
          int32_t         pairCount = GenerateInternalContacts(shapeA, shapeB, pairContacts, 8);
-         for (int32_t i = 0; i < pairCount && count < capacity; i++) {
+         for (int32_t i = 0; i < pairCount; i++) {
             if (IsSiblingInteriorContact(entryA, partA, pairContacts[i].point,
-                                         pairContacts[i].normal) ||
+                                         -pairContacts[i].normal) ||
                 IsSiblingInteriorContact(entryB, partB, pairContacts[i].point,
-                                         -pairContacts[i].normal))
+                                         pairContacts[i].normal))
                continue;
             bool duplicate = false;
             for (int32_t prior = 0; prior < count; prior++) {
@@ -758,7 +783,7 @@ static int32_t CollectBodyPairContacts(const PhysicsSceneEntry &entryA,
                   break;
                }
             }
-            if (!duplicate) contacts[count++] = pairContacts[i];
+            if (!duplicate && count < capacity) contacts[count++] = pairContacts[i];
          }
       }
    }
@@ -873,20 +898,26 @@ int32_t PhysicsScene::GetContacts(const GameObject &object, PhysicsContact *outp
 {
    PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
    if (!entry || !output || capacity <= 0) return 0;
-   int32_t written = 0;
-   for (int32_t i = 0; i < m_impl->entryCount && written < capacity; i++) {
+   Detail::BodyPairContact allContacts[Detail::kMaximumBodyPairContacts];
+   int32_t                 allCount = 0;
+   for (int32_t i = 0; i < m_impl->entryCount; i++) {
       const PhysicsSceneEntry &other = m_impl->entries[i];
       if (&other == entry) continue;
       InternalContact contacts[Detail::kMaximumBodyPairContacts];
       int32_t         count = Detail::CollectBodyPairContacts(*entry, other, contacts,
                                                               Detail::kMaximumBodyPairContacts);
-      for (int32_t contact = 0; contact < count && written < capacity; contact++) {
-         output[written].penetration = contacts[contact].penetration;
-         output[written].normal      = contacts[contact].normal;
-         output[written].point       = contacts[contact].point;
-         output[written].other       = other.object;
-         written++;
+      for (int32_t contact = 0; contact < count && allCount < Detail::kMaximumBodyPairContacts;
+           contact++) {
+         allContacts[allCount++] = {contacts[contact], other.object};
       }
+   }
+   Detail::SortContactRecords(allContacts, allCount);
+   int32_t written = allCount < capacity ? allCount : capacity;
+   for (int32_t contact = 0; contact < written; contact++) {
+      output[contact].penetration = allContacts[contact].contact.penetration;
+      output[contact].normal      = allContacts[contact].contact.normal;
+      output[contact].point       = allContacts[contact].contact.point;
+      output[contact].other       = allContacts[contact].other;
    }
    return written;
 }

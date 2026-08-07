@@ -409,7 +409,7 @@ static void BuilderDecompositionFailureIsAtomic()
        HE3D::ConvexBuilder::BuildInternal(mesh, HE3D::InternalConvexBuildMode::Decomposition, data),
        "internal cross-shaped decomposition succeeds");
    HE3D::ConvexBuildData previous = data;
-   Check(!HE3D::ConvexBuilder::BuildInternal(HE3D::Mesh::CreateCube(),
+   Check(!HE3D::ConvexBuilder::BuildInternal(HE3D::Mesh::CreateTriangle(),
                                              HE3D::InternalConvexBuildMode::Decomposition, data) &&
              SameBuildData(previous, data),
          "decomposition failure preserves existing build data");
@@ -420,16 +420,18 @@ static void BuilderDecompositionEnforcesPartLimit()
    HE3D::float3  manyParts[612];
    HE3D::int32_t count = 0;
    for (HE3D::int32_t i = 0; i < 17; i++) {
-      HE3D::float3 center = {static_cast<float>(i * 2), 0.0f, 0.0f};
+      HE3D::float3 center = {static_cast<float>((i % 5) * 2), static_cast<float>((i / 5) * 2),
+                             0.0f};
       count               = AppendTranslatedCube(manyParts, count, center);
    }
    HE3D::ConvexBuildData data;
    Check(!HE3D::ConvexBuilder::BuildInternal(HE3D::Mesh::Create(manyParts, count),
                                              HE3D::InternalConvexBuildMode::Decomposition, data),
          "internal decomposition enforces the sixteen-part limit");
-   Check(!HE3D::ConvexBuilder::BuildInternal(HE3D::Mesh::CreateCube(),
-                                             HE3D::InternalConvexBuildMode::SingleHull, data),
-         "internal single-hull mode is not exposed through decomposition entry point");
+   Check(HE3D::ConvexBuilder::BuildInternal(HE3D::Mesh::CreateCube(),
+                                            HE3D::InternalConvexBuildMode::Decomposition, data) &&
+             data.partCount == 1,
+         "internal decomposition accepts a convex input as one part");
 }
 
 static void BuilderPartsAreConvexHullData()

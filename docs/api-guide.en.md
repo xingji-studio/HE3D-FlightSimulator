@@ -56,10 +56,24 @@ Static triangle geometry uses `MeshCollider`:
 ```cpp
 HE3D::MeshCollider floorCollider(floorMesh);
 HE3D::GameObject floor(floorMesh);
-scene.AddStaticBody(floor, floorCollider);
+HE3D::PhysicsMaterial material;
+scene.AddStaticBody(floor, floorCollider, material);
 ```
 
 If the borrowed mesh value is replaced, call `MeshCollider::Refresh()` or `PhysicsScene::RefreshCollider()`.
+
+`ConvexCollider(mesh, ConvexBuildMode::ConvexDecomposition)` accepts a closed manifold mesh and
+builds a fixed `32^3` voxelized approximation, not an exact convex decomposition. It can produce
+one part for an already-convex mesh, or up to sixteen local convex parts. Thin features may be
+lost. Invalid topology, unsupported geometry, or a build that exceeds the part limit fails
+atomically: `BuildFromMesh()` returns `false` and preserves the previous valid collider cache.
+
+For a multipart convex collider, `PhysicsScene::GetContacts()` traverses every part pair and keeps
+the complete geometric contact patches before sorting them deterministically. It writes the first
+`capacity` contacts after that global sort; a smaller caller buffer therefore truncates the query
+result without changing which contacts precede it. The physics solver uses a separate manifold
+reduction of at most eight contacts per body pair, so solver reduction does not remove patches
+returned by `GetContacts()`.
 
 ## Ray Queries
 

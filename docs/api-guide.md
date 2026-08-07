@@ -56,10 +56,21 @@ scene.Step(dt, 4);
 ```cpp
 HE3D::MeshCollider floorCollider(floorMesh);
 HE3D::GameObject floor(floorMesh);
-scene.AddStaticBody(floor, floorCollider);
+HE3D::PhysicsMaterial material;
+scene.AddStaticBody(floor, floorCollider, material);
 ```
 
 如果替换了被借用的 mesh value，调用 `MeshCollider::Refresh()` 或 `PhysicsScene::RefreshCollider()`。
+
+`ConvexCollider(mesh, ConvexBuildMode::ConvexDecomposition)` 要求输入是闭合 manifold mesh，并使用固定
+`32^3` voxelized approximation，而不是精确的 convex decomposition。已是凸体的 mesh 可以生成一个
+part；一般最多生成十六个局部凸 part，细薄特征可能丢失。拓扑无效、不支持的几何或超过 part 上限时，
+`BuildFromMesh()` 返回 `false`，并以原子方式保留之前有效的 collider cache。
+
+对于 multipart convex collider，`PhysicsScene::GetContacts()` 会遍历所有 part pair，保留完整的几何
+contact patch，再进行确定性的全局排序。调用者只能得到排序后的前 `capacity` 个 contact；较小的输出
+缓冲区只会截断查询结果，不改变排序规则。物理 solver 使用独立的 manifold reduction，每个 body pair
+最多使用八个 contact，因此 solver reduction 不会删除 `GetContacts()` 返回的几何 patch。
 
 ## Ray 查询
 

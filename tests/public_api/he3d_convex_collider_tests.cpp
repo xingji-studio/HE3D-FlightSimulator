@@ -92,6 +92,14 @@ static void ConvexColliderModeRequiredConstruction()
          "mode-required convex collider exposes cube bounds");
 }
 
+static void ConvexDecompositionAcceptsAlreadyConvexInput()
+{
+   HE3D::Mesh           cubeMesh = HE3D::Mesh::CreateCube(1.0f, 1.0f, 1.0f);
+   HE3D::ConvexCollider collider(cubeMesh, HE3D::ConvexBuildMode::ConvexDecomposition);
+   Check(collider.IsValid() && collider.GetPartCount() == 1,
+         "public decomposition accepts an already-convex mesh as one part");
+}
+
 static void ConvexColliderOwnershipAndRebuildFailure()
 {
    HE3D::Mesh           cubeMesh = HE3D::Mesh::CreateCube(1.0f, 1.0f, 1.0f);
@@ -180,6 +188,7 @@ static void ConvexColliderInertiaAndRegistration()
 int main()
 {
    ConvexColliderModeRequiredConstruction();
+   ConvexDecompositionAcceptsAlreadyConvexInput();
    ConvexColliderOwnershipAndRebuildFailure();
    ConvexDecompositionBuildsMultipartCaches();
    ConvexDecompositionOwnsBuildCacheAndRegistersBodies();

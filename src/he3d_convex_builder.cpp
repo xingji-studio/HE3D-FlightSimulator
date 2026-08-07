@@ -24,6 +24,7 @@ static bool IsFiniteFloat(float value);
 
 static bool BuildSingleHull(const Mesh &mesh, ConvexBuildData &output);
 static bool AnalyzeInput(const Mesh &mesh);
+static bool IsConvexInput(const Mesh &mesh);
 
 struct AnalyzedTriangle {
    int32_t vertex[3];
@@ -710,6 +711,25 @@ static bool AnalyzeInput(const Mesh &mesh)
    return true;
 }
 
+static bool IsConvexInput(const Mesh &mesh)
+{
+   const float3 *vertices    = mesh.GetVertices();
+   const int32_t vertexCount = mesh.GetVertexCount();
+   AABB          bounds(vertices[0], vertices[0]);
+   for (int32_t i = 1; i < vertexCount; i++) IncludePoint(bounds, vertices[i]);
+   float3 extent    = bounds.max - bounds.min;
+   float  tolerance = HE3D_MAX(extent.x, HE3D_MAX(extent.y, extent.z)) * 0.00001f;
+   float3 centroid  = (bounds.min + bounds.max) * 0.5f;
+   for (int32_t triangle = 0; triangle < vertexCount; triangle += 3) {
+      float3 a      = vertices[triangle];
+      float3 normal = float3::cross(vertices[triangle + 1] - a, vertices[triangle + 2] - a);
+      if (float3::dot(normal, centroid - a) > 0.0f) normal = -normal;
+      for (int32_t vertex = 0; vertex < vertexCount; vertex++)
+         if (float3::dot(normal, vertices[vertex] - a) > tolerance) return false;
+   }
+   return true;
+}
+
 static void IncludePoint(AABB &bounds, float3 point)
 {
    if (point.x < bounds.min.x) bounds.min.x = point.x;
@@ -1022,13 +1042,23 @@ static bool BuildDecomposition(const Mesh &mesh, ConvexBuildData &output)
    int32_t     leafCount = 0;
    for (int32_t i = 0; i < rootCount; i++) {
       if (!DecomposeRegion(roots[i], workspace, leaves, &leafCount, 0)) {
+         if (rootCount == 1 && leafCount == 0 && IsConvexInput(mesh)) {
+            ConvexBuildData single;
+            bool            valid = BuildSingleHull(mesh, single);
+            FreeRegions(roots, rootCount);
+            if (valid) {
+               single.mode = ConvexBuildMode::ConvexDecomposition;
+               output      = single;
+            }
+            return valid;
+         }
          FreeRegions(roots, rootCount);
          FreeRegions(leaves, leafCount);
          return false;
       }
       FreeRegion(&roots[i]);
    }
-   if (leafCount < 2) {
+   if (leafCount < 1) {
       FreeRegions(leaves, leafCount);
       return false;
    }
