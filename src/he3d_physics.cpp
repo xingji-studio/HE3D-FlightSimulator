@@ -547,7 +547,18 @@ static bool ResolveSceneContact(PhysicsSceneEntry &entryA, PhysicsSceneEntry &en
 namespace Detail
 {
 
-static bool TryBuildContactShape(const PhysicsSceneEntry &entry, InternalContactShape *outShape)
+static const int32_t kMaximumBodyPairContacts = 2048;
+static const int32_t kSolverManifoldContacts  = 8;
+
+static int32_t GetContactShapeCount(const PhysicsSceneEntry &entry)
+{
+   if (!entry.collider || !entry.collider->IsValid()) return 0;
+   if (entry.collider->GetKind() != ColliderKind::Convex) return 1;
+   return Detail::ColliderAccess::GetShapeCount(*static_cast<ConvexCollider *>(entry.collider));
+}
+
+static bool TryBuildContactShape(const PhysicsSceneEntry &entry, int32_t partIndex,
+                                 InternalContactShape *outShape)
 {
    if (!outShape || !entry.object || !entry.collider) {
       return false;
@@ -558,6 +569,7 @@ static bool TryBuildContactShape(const PhysicsSceneEntry &entry, InternalContact
       if (!collider->IsValid()) {
          return false;
       }
+      if (partIndex != 0) return false;
       *outShape = Detail::ColliderAccess::From(*entry.object, *collider);
       return true;
    }
@@ -567,8 +579,8 @@ static bool TryBuildContactShape(const PhysicsSceneEntry &entry, InternalContact
       if (!collider->IsValid()) {
          return false;
       }
-      *outShape = Detail::ColliderAccess::From(*entry.object, *collider);
-      return true;
+      *outShape = Detail::ColliderAccess::GetShape(*entry.object, *collider, partIndex);
+      return outShape->vertices != nullptr && outShape->vertexCount > 0;
    }
 
    if (entry.collider->GetKind() == ColliderKind::Mesh) {
@@ -576,11 +588,182 @@ static bool TryBuildContactShape(const PhysicsSceneEntry &entry, InternalContact
       if (!collider->IsValid()) {
          return false;
       }
+      if (partIndex != 0) return false;
       *outShape = Detail::ColliderAccess::From(*entry.object, *collider);
       return true;
    }
 
    return false;
+}
+
+static bool TryBuildContactShape(const PhysicsSceneEntry &entry, InternalContactShape *outShape)
+{
+   return TryBuildContactShape(entry, 0, outShape);
+}
+
+static void ProjectContactShape(const InternalContactShape &shape, float3 axis, float *minimum,
+                                float *maximum)
+{
+   float3 first = shape.kind == InternalShapeKind::Box
+                      ? float3((0 & 1) ? shape.halfExtents.x : -shape.halfExtents.x,
+                               (0 & 2) ? shape.halfExtents.y : -shape.halfExtents.y,
+                               (0 & 4) ? shape.halfExtents.z : -shape.halfExtents.z)
+                      : shape.vertices[0];
+   first        = shape.object->position + shape.object->orientation.rotate(first);
+   *minimum = *maximum = float3::dot(first, axis);
+   for (int32_t i = 1; i < shape.vertexCount; i++) {
+      float3 local = shape.kind == InternalShapeKind::Box
+                         ? float3((i & 1) ? shape.halfExtents.x : -shape.halfExtents.x,
+                                  (i & 2) ? shape.halfExtents.y : -shape.halfExtents.y,
+                                  (i & 4) ? shape.halfExtents.z : -shape.halfExtents.z)
+                         : shape.vertices[i];
+      float  projection =
+          float3::dot(shape.object->position + shape.object->orientation.rotate(local), axis);
+      if (projection < *minimum) *minimum = projection;
+      if (projection > *maximum) *maximum = projection;
+   }
+}
+
+static bool ShapeContainsPoint(const InternalContactShape &shape, float3 point)
+{
+   if (shape.kind == InternalShapeKind::StaticMesh || !shape.object || shape.vertexCount < 1)
+      return false;
+   const int32_t axisCount = shape.kind == InternalShapeKind::Box ? 3 : shape.faceAxisCount;
+   for (int32_t axisIndex = 0; axisIndex < axisCount; axisIndex++) {
+      float3 localAxis = shape.kind == InternalShapeKind::Box ? (axisIndex == 0   ? float3(1, 0, 0)
+                                                                 : axisIndex == 1 ? float3(0, 1, 0)
+                                                                                  : float3(0, 0, 1))
+                                                              : shape.faceAxes[axisIndex];
+      float3 axis      = shape.object->orientation.rotate(localAxis);
+      float  minimum   = 0.0f;
+      float  maximum   = 0.0f;
+      ProjectContactShape(shape, axis, &minimum, &maximum);
+      float projection = float3::dot(point, axis);
+      if (projection <= minimum + 0.001f || projection >= maximum - 0.001f) return false;
+   }
+   return true;
+}
+
+static bool IsSiblingInteriorContact(const PhysicsSceneEntry &entry, int32_t sourcePart,
+                                     float3 point, float3 outward)
+{
+   int32_t count = GetContactShapeCount(entry);
+   if (count < 2) return false;
+   for (int32_t part = 0; part < count; part++) {
+      if (part == sourcePart) continue;
+      InternalContactShape sibling;
+      if (TryBuildContactShape(entry, part, &sibling) &&
+          ShapeContainsPoint(sibling, point + outward * 0.002f))
+         return true;
+   }
+   return false;
+}
+
+static bool ContactLess(const InternalContact &left, const InternalContact &right)
+{
+   if (left.normal.x != right.normal.x) return left.normal.x < right.normal.x;
+   if (left.normal.y != right.normal.y) return left.normal.y < right.normal.y;
+   if (left.normal.z != right.normal.z) return left.normal.z < right.normal.z;
+   if (left.point.x != right.point.x) return left.point.x < right.point.x;
+   if (left.point.y != right.point.y) return left.point.y < right.point.y;
+   if (left.point.z != right.point.z) return left.point.z < right.point.z;
+   return left.penetration > right.penetration;
+}
+
+static void SortContacts(InternalContact *contacts, int32_t count)
+{
+   for (int32_t i = 1; i < count; i++) {
+      InternalContact value    = contacts[i];
+      int32_t         position = i;
+      while (position > 0 && ContactLess(value, contacts[position - 1])) {
+         contacts[position] = contacts[position - 1];
+         position--;
+      }
+      contacts[position] = value;
+   }
+}
+
+static void ReduceBodyPairContacts(InternalContact *contacts, int32_t *count, int32_t capacity)
+{
+   if (!contacts || !count || capacity <= 0) return;
+   if (capacity > kSolverManifoldContacts) capacity = kSolverManifoldContacts;
+   if (*count <= capacity) return;
+   SortContacts(contacts, *count);
+   InternalContact selected[kSolverManifoldContacts];
+   bool            used[kMaximumBodyPairContacts] = {};
+   int32_t         selectedCount                  = 0;
+   for (int32_t i = 0; i < *count && selectedCount < capacity; i++) {
+      bool familySeen = false;
+      for (int32_t chosen = 0; chosen < selectedCount; chosen++)
+         familySeen =
+             familySeen || float3::dot(contacts[i].normal, selected[chosen].normal) > 0.98f;
+      if (!familySeen) {
+         selected[selectedCount++] = contacts[i];
+         used[i]                   = true;
+      }
+   }
+   while (selectedCount < capacity) {
+      int32_t best      = -1;
+      float   bestScore = -1.0f;
+      for (int32_t i = 0; i < *count; i++) {
+         if (used[i]) continue;
+         float nearest = (contacts[i].point - selected[0].point).lengthSq();
+         for (int32_t chosen = 1; chosen < selectedCount; chosen++) {
+            float distance = (contacts[i].point - selected[chosen].point).lengthSq();
+            if (distance < nearest) nearest = distance;
+         }
+         float score = nearest + contacts[i].penetration * 0.01f;
+         if (score > bestScore) {
+            bestScore = score;
+            best      = i;
+         }
+      }
+      if (best < 0) break;
+      selected[selectedCount++] = contacts[best];
+      used[best]                = true;
+   }
+   for (int32_t i = 0; i < selectedCount; i++) contacts[i] = selected[i];
+   *count = selectedCount;
+}
+
+static int32_t CollectBodyPairContacts(const PhysicsSceneEntry &entryA,
+                                       const PhysicsSceneEntry &entryB, InternalContact *contacts,
+                                       int32_t capacity)
+{
+   if (!contacts || capacity <= 0) return 0;
+   int32_t count  = 0;
+   int32_t partsA = GetContactShapeCount(entryA);
+   int32_t partsB = GetContactShapeCount(entryB);
+   for (int32_t partA = 0; partA < partsA; partA++) {
+      InternalContactShape shapeA;
+      if (!TryBuildContactShape(entryA, partA, &shapeA)) continue;
+      for (int32_t partB = 0; partB < partsB; partB++) {
+         InternalContactShape shapeB;
+         if (!TryBuildContactShape(entryB, partB, &shapeB)) continue;
+         InternalContact pairContacts[8];
+         int32_t         pairCount = GenerateInternalContacts(shapeA, shapeB, pairContacts, 8);
+         for (int32_t i = 0; i < pairCount && count < capacity; i++) {
+            if (IsSiblingInteriorContact(entryA, partA, pairContacts[i].point,
+                                         pairContacts[i].normal) ||
+                IsSiblingInteriorContact(entryB, partB, pairContacts[i].point,
+                                         -pairContacts[i].normal))
+               continue;
+            bool duplicate = false;
+            for (int32_t prior = 0; prior < count; prior++) {
+               if ((contacts[prior].point - pairContacts[i].point).lengthSq() < 0.000001f &&
+                   float3::dot(contacts[prior].normal, pairContacts[i].normal) > 0.9999f) {
+                  duplicate = true;
+                  if (pairContacts[i].penetration > contacts[prior].penetration)
+                     contacts[prior] = pairContacts[i];
+                  break;
+               }
+            }
+            if (!duplicate) contacts[count++] = pairContacts[i];
+         }
+      }
+   }
+   SortContacts(contacts, count);
+   return count;
 }
 
 class PhysicsStepper
@@ -658,14 +841,9 @@ class PhysicsStepper
          return true;
       }
 
-      InternalContactShape shapeA;
-      InternalContactShape shapeB;
-      if (!TryBuildContactShape(entryA, &shapeA) || !TryBuildContactShape(entryB, &shapeB)) {
-         return true;
-      }
-
-      InternalContact contacts[8];
-      int32_t         count = GenerateInternalContacts(shapeA, shapeB, contacts, 8);
+      InternalContact contacts[kMaximumBodyPairContacts];
+      int32_t count = CollectBodyPairContacts(entryA, entryB, contacts, kMaximumBodyPairContacts);
+      ReduceBodyPairContacts(contacts, &count, kSolverManifoldContacts);
       for (int32_t c = 0; c < count; c++) {
          if (!ResolveSceneContact(entryA, entryB, contacts[c])) return false;
       }
@@ -695,16 +873,13 @@ int32_t PhysicsScene::GetContacts(const GameObject &object, PhysicsContact *outp
 {
    PhysicsSceneEntry *entry = m_impl ? m_impl->Find(object) : nullptr;
    if (!entry || !output || capacity <= 0) return 0;
-   InternalContactShape shape;
-   if (!Detail::TryBuildContactShape(*entry, &shape)) return 0;
    int32_t written = 0;
    for (int32_t i = 0; i < m_impl->entryCount && written < capacity; i++) {
       const PhysicsSceneEntry &other = m_impl->entries[i];
       if (&other == entry) continue;
-      InternalContactShape otherShape;
-      if (!Detail::TryBuildContactShape(other, &otherShape)) continue;
-      InternalContact contacts[8];
-      int32_t         count = GenerateInternalContacts(shape, otherShape, contacts, 8);
+      InternalContact contacts[Detail::kMaximumBodyPairContacts];
+      int32_t         count = Detail::CollectBodyPairContacts(*entry, other, contacts,
+                                                              Detail::kMaximumBodyPairContacts);
       for (int32_t contact = 0; contact < count && written < capacity; contact++) {
          output[written].penetration = contacts[contact].penetration;
          output[written].normal      = contacts[contact].normal;

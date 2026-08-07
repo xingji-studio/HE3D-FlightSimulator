@@ -386,12 +386,21 @@ if(HE3D_BUILD_TESTS)
         tests/public_api/he3d_convex_collider_tests.cpp
     )
 
+    add_executable(he3d_physics_edge_tests
+        tests/public_api/he3d_physics_edge_tests.cpp
+    )
+
     target_include_directories(he3d_public_api_tests
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
     target_include_directories(he3d_convex_collider_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_include_directories(he3d_physics_edge_tests
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
@@ -403,6 +412,11 @@ if(HE3D_BUILD_TESTS)
     )
 
     target_compile_definitions(he3d_convex_collider_tests
+        PRIVATE
+            HE3D_BACKEND_CONSOLE
+    )
+
+    target_compile_definitions(he3d_physics_edge_tests
         PRIVATE
             HE3D_BACKEND_CONSOLE
     )
@@ -421,11 +435,20 @@ if(HE3D_BUILD_TESTS)
             $<$<CONFIG:Debug>:-g>
     )
 
+    target_compile_options(he3d_physics_edge_tests
+        PRIVATE
+            $<$<CONFIG:Release>:${HE3D_RELEASE_OPT_FLAG}>
+            $<$<CONFIG:Debug>:-O0>
+            $<$<CONFIG:Debug>:-g>
+    )
+
     target_link_libraries(he3d_public_api_tests PRIVATE HE3D::Engine)
     target_link_libraries(he3d_convex_collider_tests PRIVATE HE3D::Engine)
+    target_link_libraries(he3d_physics_edge_tests PRIVATE HE3D::Engine)
 
     add_test(NAME he3d_public_api_tests COMMAND he3d_public_api_tests)
     add_test(NAME he3d_convex_collider_tests COMMAND he3d_convex_collider_tests)
+    add_test(NAME he3d_physics_edge_tests COMMAND he3d_physics_edge_tests)
     add_test(NAME he3d_include_boundaries
         COMMAND
             ${CMAKE_COMMAND}
