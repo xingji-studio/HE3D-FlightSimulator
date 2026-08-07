@@ -3,6 +3,7 @@
 #include <cfloat>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <unistd.h>
 
 static int g_failures = 0;
@@ -23,6 +24,9 @@ static bool Near(float a, float b, float tolerance)
 }
 
 static bool Finite(float value) { return value >= -FLT_MAX && value <= FLT_MAX; }
+
+static float FlatHeight(float, float, void *) { return 1.0f; }
+static float NaNHeight(float, float, void *) { return std::numeric_limits<float>::quiet_NaN(); }
 
 static void ApplicationBasePathUsesExplicitContract()
 {
@@ -289,6 +293,34 @@ static void AngularInertiaIsPerAxis()
          "angular impulses use the matching inertia axis");
 }
 
+static void HeightFieldAndRendererRejectUnsafeDimensions()
+{
+   HE3D::HeightFieldCollider       field(FlatHeight, nullptr, 4, 1.0f);
+   HE3D::HeightFieldCollider::Tile tile;
+   Check(field.IsValid() && field.BuildTile(tile, 0.0f, 0.0f) && tile.active &&
+             field.NormalAt(0.0f, 0.0f).y > 0.9f,
+         "heightfield builds finite tiles and normals");
+
+   HE3D::HeightFieldCollider huge(FlatHeight, nullptr, 100000, 1.0f);
+   HE3D::HeightFieldCollider invalidSize(FlatHeight, nullptr, 4,
+                                         std::numeric_limits<float>::infinity());
+   HE3D::HeightFieldCollider invalidSamples(NaNHeight, nullptr, 4, 1.0f);
+   Check(!huge.IsValid() && !invalidSize.IsValid() && invalidSamples.IsValid() &&
+             !invalidSamples.BuildTile(tile, 0.0f, 0.0f) && !tile.active &&
+             invalidSamples.NormalAt(0.0f, 0.0f).y == 1.0f,
+         "heightfield rejects unsafe allocation and nonfinite samples");
+
+   HE3D::SetSsaaScale(1);
+   HE3D::Renderer renderer(nullptr, 2, 2);
+   renderer.Clear({0.0f, 0.0f, 0.0f});
+   Check(renderer.GetPresentedPixels() == nullptr,
+         "renderer has no presented frame before Present");
+   renderer.Resize(50000, 50000);
+   Check(renderer.GetPresentedWidth() == 0 && renderer.GetPresentedHeight() == 0 &&
+             renderer.GetPresentedPixels() == nullptr,
+         "renderer rejects oversized resize without exposing a partial frame");
+}
+
 int main()
 {
    ApplicationBasePathUsesExplicitContract();
@@ -299,6 +331,7 @@ int main()
    PhysicsStepRollsBackOverflow();
    KinematicBodiesUseSceneMotion();
    AngularInertiaIsPerAxis();
+   HeightFieldAndRendererRejectUnsafeDimensions();
 
    if (g_failures == 0) {
       std::printf("he3d_public_api_tests passed\n");

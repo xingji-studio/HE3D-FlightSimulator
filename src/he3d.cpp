@@ -109,6 +109,22 @@ static bool            g_fxaaEnabled    = false;
 static bool            g_taaEnabled     = false;
 static bool            g_msaaEnabled    = false;
 static uint32_t        g_ssaaScale      = 1;
+static const int64_t   kMaximumRendererPixels = 16777216;
+
+static bool RendererBufferSize(int32_t width, int32_t height, uint32_t scale, int32_t *scaledWidth,
+                               int32_t *scaledHeight, int32_t *pixels)
+{
+   if (width <= 0 || height <= 0 || scale < 1 || scale > 4) return false;
+   int64_t scaledW = static_cast<int64_t>(width) * scale;
+   int64_t scaledH = static_cast<int64_t>(height) * scale;
+   int64_t total   = scaledW * scaledH;
+   if (scaledW > 0x7fffffff || scaledH > 0x7fffffff || total <= 0 || total > kMaximumRendererPixels)
+      return false;
+   *scaledWidth  = static_cast<int32_t>(scaledW);
+   *scaledHeight = static_cast<int32_t>(scaledH);
+   *pixels       = static_cast<int32_t>(total);
+   return true;
+}
 
 const Platform *GetPlatform()
 {
@@ -1136,10 +1152,12 @@ Renderer::Renderer(Window *window, int32_t w, int32_t h)
 
    if (m_ssaaScale < 1) m_ssaaScale = 1;
    if (m_ssaaScale > 4) m_ssaaScale = 4;
-   m_width  = w * (int32_t)m_ssaaScale;
-   m_height = h * (int32_t)m_ssaaScale;
-
-   int sz          = m_width * m_height;
+   int32_t sz = 0;
+   if (!RendererBufferSize(w, h, m_ssaaScale, &m_width, &m_height, &sz)) {
+      m_width = m_height = m_outputWidth = m_outputHeight = 0;
+      m_ssaaScale                                         = 1;
+      return;
+   }
    m_colorBuf      = new ColorA[sz];
    m_fxaaBuf       = nullptr;
    m_taaBuf        = nullptr;
@@ -1232,10 +1250,16 @@ void Renderer::Resize(int32_t w, int32_t h)
    m_ssaaScale    = GetSsaaScale();
    if (m_ssaaScale < 1) m_ssaaScale = 1;
    if (m_ssaaScale > 4) m_ssaaScale = 4;
-   m_width  = w * (int32_t)m_ssaaScale;
-   m_height = h * (int32_t)m_ssaaScale;
-
-   int     sz        = m_width * m_height;
+   int32_t sz         = 0;
+   int32_t nextWidth  = 0;
+   int32_t nextHeight = 0;
+   if (!RendererBufferSize(w, h, m_ssaaScale, &nextWidth, &nextHeight, &sz)) {
+      m_width = m_height = m_outputWidth = m_outputHeight = 0;
+      m_ssaaScale                                         = 1;
+      return;
+   }
+   m_width           = nextWidth;
+   m_height          = nextHeight;
    ColorA *nextColor = new ColorA[sz];
    float  *nextDepth = new float[sz];
    if (!nextColor || !nextDepth) {
@@ -1267,7 +1291,9 @@ bool Renderer::EnsureMsaaBuffers()
    m_msaaColorBuf = nullptr;
    m_msaaDepthBuf = nullptr;
 
-   int sampleTotal = m_width * m_height * 4;
+   int64_t sampleTotal64 = static_cast<int64_t>(m_width) * m_height * 4;
+   if (sampleTotal64 <= 0 || sampleTotal64 > kMaximumRendererPixels * 4) return false;
+   int sampleTotal = static_cast<int>(sampleTotal64);
    m_msaaColorBuf  = new ColorA[sampleTotal];
    m_msaaDepthBuf  = new float[sampleTotal];
    if (!m_msaaColorBuf || !m_msaaDepthBuf) {

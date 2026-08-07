@@ -258,7 +258,7 @@ class HeightFieldCollider
    /// Return an approximate terrain normal at world x/z.
    /// 返回世界 x/z 位置的近似地形法线。
    float3 NormalAt(float x, float z) const;
-   /// Return true when callback, grid count, and cell size are usable.
+   /// Return true when callback, finite samples, grid count (2..1024), and finite positive cell size are usable.
    /// 当回调、网格数量和单元尺寸可用时返回 true。
    bool IsValid() const;
 

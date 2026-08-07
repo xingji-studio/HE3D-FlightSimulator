@@ -26,9 +26,16 @@ static bool DirectionsNear(float3 a, float3 b)
 
 static bool IsFiniteFloat(float value)
 {
-   return value >= -340282346638528859811704183484516925440.0f &&
+   return value == value && value >= -340282346638528859811704183484516925440.0f &&
           value <= 340282346638528859811704183484516925440.0f;
 }
+
+static bool IsFiniteFloat3(float3 value)
+{
+   return IsFiniteFloat(value.x) && IsFiniteFloat(value.y) && IsFiniteFloat(value.z);
+}
+
+static const int32_t kMaximumHeightFieldGridCount = 1024;
 
 HeightFieldCollider::Tile::Tile()
     : active(false), originX(0.0f), originZ(0.0f), bounds(), cellBounds(nullptr), cellCount(0),
@@ -80,7 +87,8 @@ void HeightFieldCollider::Configure(HeightSampleCallback callback, void *user,
 
 bool HeightFieldCollider::IsValid() const
 {
-   return sampleHeight != nullptr && gridCount >= 2 && cellSize > 0.0f;
+   return sampleHeight != nullptr && gridCount >= 2 && gridCount <= kMaximumHeightFieldGridCount &&
+          IsFiniteFloat(cellSize) && cellSize > 0.0f;
 }
 
 float HeightFieldCollider::Sample(float x, float z) const
@@ -91,17 +99,19 @@ float HeightFieldCollider::Sample(float x, float z) const
 bool HeightFieldCollider::BuildTile(Tile &tile, float originX, float originZ) const
 {
    tile.active    = false;
-   tile.originX   = originX;
-   tile.originZ   = originZ;
+   tile.originX   = 0.0f;
+   tile.originZ   = 0.0f;
    tile.cellCount = 0;
    tile.bounds    = AABB({0, 0, 0}, {0, 0, 0});
 
-   if (!IsValid()) {
+   if (!IsValid() || !IsFiniteFloat(originX) || !IsFiniteFloat(originZ)) {
       return false;
    }
 
    int32_t cellsPerSide = gridCount - 1;
-   int32_t cellTotal    = cellsPerSide * cellsPerSide;
+   int64_t cellTotal64  = static_cast<int64_t>(cellsPerSide) * cellsPerSide;
+   if (cellTotal64 <= 0 || cellTotal64 > 0x7fffffff) return false;
+   int32_t cellTotal = static_cast<int32_t>(cellTotal64);
    if (cellTotal <= 0 || !tile.EnsureCapacity(cellTotal)) {
       return false;
    }
@@ -118,7 +128,13 @@ bool HeightFieldCollider::BuildTile(Tile &tile, float originX, float originZ) co
          float3 p01 = {x0, Sample(x0, z1), z1};
          float3 p10 = {x1, Sample(x1, z0), z0};
          float3 p11 = {x1, Sample(x1, z1), z1};
-         AABB   cell(p00, p00);
+         if (!IsFiniteFloat3(p00) || !IsFiniteFloat3(p01) || !IsFiniteFloat3(p10) ||
+             !IsFiniteFloat3(p11)) {
+            tile.cellCount = 0;
+            tile.bounds    = AABB({0, 0, 0}, {0, 0, 0});
+            return false;
+         }
+         AABB cell(p00, p00);
          IncludePoint(cell, p01);
          IncludePoint(cell, p10);
          IncludePoint(cell, p11);
@@ -136,18 +152,23 @@ bool HeightFieldCollider::BuildTile(Tile &tile, float originX, float originZ) co
       }
    }
 
-   tile.active = true;
+   tile.originX = originX;
+   tile.originZ = originZ;
+   tile.active  = true;
    return true;
 }
 
 float3 HeightFieldCollider::NormalAt(float x, float z) const
 {
+   if (!IsValid() || !IsFiniteFloat(x) || !IsFiniteFloat(z)) return {0, 1, 0};
    float epsilon = cellSize > 0.0f ? cellSize * 0.0625f : 0.75f;
    if (epsilon < 0.1f) epsilon = 0.1f;
    float hx0 = Sample(x - epsilon, z);
    float hx1 = Sample(x + epsilon, z);
    float hz0 = Sample(x, z - epsilon);
    float hz1 = Sample(x, z + epsilon);
+   if (!IsFiniteFloat(hx0) || !IsFiniteFloat(hx1) || !IsFiniteFloat(hz0) || !IsFiniteFloat(hz1))
+      return {0, 1, 0};
    return float3(hx0 - hx1, 2.0f * epsilon, hz0 - hz1).normalizeFast();
 }
 

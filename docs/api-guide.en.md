@@ -7,6 +7,11 @@
 `Mesh` and `Texture` are movable values. They own their memory and report creation failure with `IsValid()`.
 `Mesh::Create()` accepts complete triangle lists only: `vertexCount` must be positive and divisible
 by three.
+`HeightFieldCollider` accepts grid counts from 2 through 1024 and finite positive cell sizes.
+`BuildTile()` rejects non-finite origins or samples without activating a partial tile; `NormalAt()`
+returns the up vector when its inputs or samples are non-finite. Renderer dimensions are rejected
+when SSAA-scaled pixel allocation would exceed 16,777,216 pixels; an invalid `Resize()` leaves no
+presented frame available.
 
 ```cpp
 HE3D::Mesh mesh = HE3D::Mesh::CreateCube(1.0f, 1.0f, 1.0f);

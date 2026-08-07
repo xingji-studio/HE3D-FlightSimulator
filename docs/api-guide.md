@@ -6,6 +6,10 @@
 
 `Mesh` 和 `Texture` 是可移动 value。它们拥有自己的内存，并用 `IsValid()` 表示创建失败。
 `Mesh::Create()` 只接受完整的三角形列表：`vertexCount` 必须为正数且能被三整除。
+`HeightFieldCollider` 的 grid count 必须在 2 到 1024 之间，cell size 必须是有限正数。
+`BuildTile()` 遇到非有限 origin 或采样值时会失败且不会激活部分 tile；`NormalAt()` 的输入或采样
+非有限时返回向上方向。Renderer 在 SSAA 缩放后的像素分配超过 16,777,216 像素时拒绝尺寸；无效的
+`Resize()` 不会提供 presented frame。
 
 ```cpp
 HE3D::Mesh mesh = HE3D::Mesh::CreateCube(1.0f, 1.0f, 1.0f);
