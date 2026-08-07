@@ -164,10 +164,7 @@ void Collider::SetColliderState(bool valid, AABB localBounds)
 
 bool Collider::IsValid() const { return m_valid; }
 
-AABB Collider::LocalAABB() const
-{
-   return m_valid ? m_localBounds : AABB({0, 0, 0}, {0, 0, 0});
-}
+AABB Collider::LocalAABB() const { return m_valid ? m_localBounds : AABB({0, 0, 0}, {0, 0, 0}); }
 
 ColliderKind Collider::GetKind() const { return m_kind; }
 
@@ -182,7 +179,7 @@ BoxCollider::BoxCollider(float width, float height, float depth)
 bool BoxCollider::SetSize(float width, float height, float depth)
 {
    bool valid    = IsFiniteFloat(width) && IsFiniteFloat(height) && IsFiniteFloat(depth) &&
-                 width > 0.0f && height > 0.0f && depth > 0.0f;
+                   width > 0.0f && height > 0.0f && depth > 0.0f;
    m_halfExtents = valid ? float3(width * 0.5f, height * 0.5f, depth * 0.5f) : float3(0, 0, 0);
    SetColliderState(valid, AABB(-m_halfExtents, m_halfExtents));
    return valid;
@@ -267,7 +264,7 @@ int32_t ConvexCollider::GetPartCount() const
 bool ConvexCollider::BuildFromMesh(const Mesh &mesh, ConvexBuildMode mode)
 {
    ConvexBuildData buildData;
-   if (!ConvexBuilder::Build(mesh, mode, buildData) || buildData.partCount != 1) {
+   if (!ConvexBuilder::Build(mesh, mode, buildData) || buildData.partCount < 1) {
       return false;
    }
 
@@ -286,7 +283,7 @@ MeshCollider::MeshCollider(const Mesh &mesh) : Collider(ColliderKind::Mesh), m_m
 
 void MeshCollider::Refresh()
 {
-    SetColliderState(false, AABB());
+   SetColliderState(false, AABB());
    if (!m_mesh || !m_mesh->IsValid() || m_mesh->GetVertexCount() < 3 ||
        (m_mesh->GetVertexCount() % 3) != 0) {
       return;
@@ -297,7 +294,7 @@ void MeshCollider::Refresh()
    for (int32_t i = 1; i < m_mesh->GetVertexCount(); i++) {
       IncludePoint(m_localBounds, vertices[i]);
    }
-    SetColliderState(true, m_localBounds);
+   SetColliderState(true, m_localBounds);
 }
 
 InternalContactShape Detail::ColliderAccess::From(const GameObject  &object,
@@ -322,19 +319,45 @@ InternalContactShape Detail::ColliderAccess::From(const GameObject  &object,
 InternalContactShape Detail::ColliderAccess::From(const GameObject     &object,
                                                   const ConvexCollider &collider)
 {
+   return Detail::ColliderAccess::GetShape(object, collider, 0);
+}
+
+int32_t Detail::ColliderAccess::GetShapeCount(const ConvexCollider &collider)
+{
+   return collider.m_hasBuild ? collider.m_cache.buildData.partCount : 0;
+}
+
+InternalContactShape Detail::ColliderAccess::GetShape(const GameObject     &object,
+                                                      const ConvexCollider &collider,
+                                                      int32_t               partIndex)
+{
    InternalContactShape shape;
-   shape.kind          = InternalShapeKind::Convex;
-   shape.object        = &object;
-   shape.localCenter   = (collider.m_localBounds.min + collider.m_localBounds.max) * 0.5f;
-   shape.halfExtents   = (collider.m_localBounds.max - collider.m_localBounds.min) * 0.5f;
-   shape.vertices      = collider.m_cache.buildData.parts[0].vertices;
-   shape.vertexCount   = collider.m_cache.buildData.parts[0].vertexCount;
-   shape.faceAxes      = collider.m_cache.buildData.parts[0].faceAxes;
-   shape.faceAxisCount = collider.m_cache.buildData.parts[0].faceAxisCount;
-   shape.edgeAxes      = collider.m_cache.buildData.parts[0].edgeAxes;
-   shape.edgeAxisCount = collider.m_cache.buildData.parts[0].edgeAxisCount;
-   shape.mesh          = nullptr;
-   shape.localBounds   = collider.m_localBounds;
+   shape.kind   = InternalShapeKind::Convex;
+   shape.object = &object;
+   if (!collider.m_hasBuild || partIndex < 0 || partIndex >= collider.m_cache.buildData.partCount) {
+      shape.localCenter   = {0, 0, 0};
+      shape.halfExtents   = {0, 0, 0};
+      shape.vertices      = nullptr;
+      shape.vertexCount   = 0;
+      shape.faceAxes      = nullptr;
+      shape.faceAxisCount = 0;
+      shape.edgeAxes      = nullptr;
+      shape.edgeAxisCount = 0;
+      shape.mesh          = nullptr;
+      shape.localBounds   = AABB();
+      return shape;
+   }
+   const ConvexBuildPart &part = collider.m_cache.buildData.parts[partIndex];
+   shape.localCenter           = (part.bounds.min + part.bounds.max) * 0.5f;
+   shape.halfExtents           = (part.bounds.max - part.bounds.min) * 0.5f;
+   shape.vertices              = part.vertices;
+   shape.vertexCount           = part.vertexCount;
+   shape.faceAxes              = part.faceAxes;
+   shape.faceAxisCount         = part.faceAxisCount;
+   shape.edgeAxes              = part.edgeAxes;
+   shape.edgeAxisCount         = part.edgeAxisCount;
+   shape.mesh                  = nullptr;
+   shape.localBounds           = part.bounds;
    return shape;
 }
 

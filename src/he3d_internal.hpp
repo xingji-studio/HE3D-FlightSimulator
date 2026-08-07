@@ -53,6 +53,9 @@ class ColliderAccess
  public:
    static InternalContactShape From(const GameObject &object, const BoxCollider &collider);
    static InternalContactShape From(const GameObject &object, const ConvexCollider &collider);
+   static int32_t              GetShapeCount(const ConvexCollider &collider);
+   static InternalContactShape GetShape(const GameObject &object, const ConvexCollider &collider,
+                                        int32_t partIndex);
    static InternalContactShape From(const GameObject &object, const MeshCollider &collider);
 };
 

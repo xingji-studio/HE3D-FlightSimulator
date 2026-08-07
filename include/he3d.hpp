@@ -29,15 +29,16 @@ namespace Detail
 class ColliderAccess;
 }
 enum class ColliderKind { Box, Convex, Mesh };
-enum class ConvexBuildMode { SingleHull };
+/// SingleHull preserves the input mesh's one-hull behavior. ConvexDecomposition builds up to
+/// sixteen convex parts from a fixed 32^3 voxel approximation of a closed mesh.
+enum class ConvexBuildMode { SingleHull, ConvexDecomposition };
 
-struct ConvexBuildPart
-{
-   float3 vertices[64];
+struct ConvexBuildPart {
+   float3  vertices[64];
    int32_t vertexCount;
-   float3 faceAxes[16];
+   float3  faceAxes[16];
    int32_t faceAxisCount;
-   float3 edgeAxes[64];
+   float3  edgeAxes[64];
    int32_t edgeAxisCount;
    AABB    bounds;
 
@@ -48,8 +49,7 @@ struct ConvexBuildPart
    }
 };
 
-struct ConvexBuildData
-{
+struct ConvexBuildData {
    ConvexBuildMode mode;
    ConvexBuildPart parts[16];
    int32_t         partCount;
@@ -99,10 +99,10 @@ class Mesh
    static Mesh Create(const float3 *srcVertices, const float2 *srcUvs, int32_t vertexCount);
    static Mesh CreateTriangle(float width = 1.0f, float height = 1.0f);
    static Mesh CreatePlane(float width = 1.0f, float depth = 1.0f);
-    static Mesh CreateCube(float width = 1.0f, float height = 1.0f, float depth = 1.0f);
-    static Mesh CreateSphere(float radius = 0.5f, int32_t segments = 16, int32_t rings = 8);
-    static Mesh LoadOBJ(const char *filename);
-    static Mesh LoadGLTF(const char *filename);
+   static Mesh CreateCube(float width = 1.0f, float height = 1.0f, float depth = 1.0f);
+   static Mesh CreateSphere(float radius = 0.5f, int32_t segments = 16, int32_t rings = 8);
+   static Mesh LoadOBJ(const char *filename);
+   static Mesh LoadGLTF(const char *filename);
 
  private:
    friend class MeshCollider;
@@ -187,12 +187,12 @@ class GameObject
 // PhysicsContact 预留碰撞接触结果的公开形状。
 // ============================================================================
 struct PhysicsContact {
-    float  penetration;
-    float3 normal;
-    float3 point;
-    const GameObject *other;
+   float             penetration;
+   float3            normal;
+   float3            point;
+   const GameObject *other;
 
-    PhysicsContact() : penetration(0.0f), normal{0, 1, 0}, point{0, 0, 0}, other(nullptr) {}
+   PhysicsContact() : penetration(0.0f), normal{0, 1, 0}, point{0, 0, 0}, other(nullptr) {}
 };
 
 /// HeightSampleCallback returns terrain height at world x/z for a caller-owned
@@ -277,27 +277,27 @@ RayHit RaycastMeshTriangles(const Ray &ray, const GameObject &object);
 class Collider
 {
  public:
-    virtual bool IsValid() const;
-    AABB         LocalAABB() const;
-    ColliderKind GetKind() const;
-    float3       EstimateInertia(float mass) const;
-    float        EstimateDamping(float mass = 1.0f) const;
+   virtual bool IsValid() const;
+   AABB         LocalAABB() const;
+   ColliderKind GetKind() const;
+   float3       EstimateInertia(float mass) const;
+   float        EstimateDamping(float mass = 1.0f) const;
 
  protected:
-    explicit Collider(ColliderKind kind);
-    void SetColliderState(bool valid, AABB localBounds);
+   explicit Collider(ColliderKind kind);
+   void SetColliderState(bool valid, AABB localBounds);
 
-    ColliderKind m_kind;
-    AABB         m_localBounds;
-    bool         m_valid;
+   ColliderKind m_kind;
+   AABB         m_localBounds;
+   bool         m_valid;
 
  private:
-    friend class PhysicsScene;
-    friend class Detail::ColliderAccess;
+   friend class PhysicsScene;
+   friend class Detail::ColliderAccess;
 
-    Collider()                            = delete;
-    Collider(const Collider &)            = delete;
-    Collider &operator=(const Collider &) = delete;
+   Collider()                            = delete;
+   Collider(const Collider &)            = delete;
+   Collider &operator=(const Collider &) = delete;
 };
 
 // ============================================================================
@@ -307,23 +307,24 @@ class Collider
 class BoxCollider : public Collider
 {
  public:
-    BoxCollider();
-    BoxCollider(float width, float height, float depth);
+   BoxCollider();
+   BoxCollider(float width, float height, float depth);
 
-    bool SetSize(float width, float height, float depth);
+   bool SetSize(float width, float height, float depth);
 
  private:
    friend class PhysicsScene;
    friend class Detail::ColliderAccess;
 
-    float3 m_halfExtents;
+   float3 m_halfExtents;
 
    BoxCollider(const BoxCollider &)            = delete;
    BoxCollider &operator=(const BoxCollider &) = delete;
 };
 
 // ============================================================================
-// ConvexCollider stores a validated local convex mesh cache.
+// ConvexCollider stores a validated local convex mesh cache. ConvexDecomposition is a fixed 32^3
+// voxelized approximation, not an exact decomposition of the source mesh.
 // ConvexCollider 保存经过校验的局部凸网格缓存。
 // ============================================================================
 class ConvexCollider : public Collider
@@ -334,6 +335,7 @@ class ConvexCollider : public Collider
    ~ConvexCollider();
 
    bool BuildFromMesh(const Mesh &mesh, ConvexBuildMode mode);
+   /// Return one for SingleHull or the number of voxelized convex parts after decomposition.
    int32_t GetPartCount() const;
 
  private:
@@ -362,13 +364,13 @@ class MeshCollider : public Collider
  public:
    explicit MeshCollider(const Mesh &mesh);
 
-    void Refresh();
+   void Refresh();
 
  private:
    friend class PhysicsScene;
    friend class Detail::ColliderAccess;
 
-    const Mesh *m_mesh;
+   const Mesh *m_mesh;
 
    MeshCollider()                                = delete;
    MeshCollider(const MeshCollider &)            = delete;
@@ -385,41 +387,41 @@ enum class PhysicsStepResult { Completed, InvalidInput, InvalidBodyState };
 class PhysicsMaterial
 {
  public:
-    PhysicsMaterial();
+   PhysicsMaterial();
 
-    float GetFriction() const;
-    float GetRestitution() const;
+   float GetFriction() const;
+   float GetRestitution() const;
 
-    PhysicsSettingResult SetFriction(float value);
-    PhysicsSettingResult SetRestitution(float value);
+   PhysicsSettingResult SetFriction(float value);
+   PhysicsSettingResult SetRestitution(float value);
 
  private:
-    float m_friction;
-    float m_restitution;
+   float m_friction;
+   float m_restitution;
 };
 
 class PhysicsProperties
 {
  public:
-    PhysicsProperties();
+   PhysicsProperties();
 
-    float                  GetMass() const;
-    float3                 GetInertia() const;
-    float                  GetDamping() const;
-    const PhysicsMaterial &GetMaterial() const;
+   float                  GetMass() const;
+   float3                 GetInertia() const;
+   float                  GetDamping() const;
+   const PhysicsMaterial &GetMaterial() const;
 
-    PhysicsSettingResult SetMass(float value);
-    PhysicsSettingResult SetInertia(float3 value);
-    PhysicsSettingResult SetDamping(float value);
-    void                 SetMaterial(const PhysicsMaterial &value);
+   PhysicsSettingResult SetMass(float value);
+   PhysicsSettingResult SetInertia(float3 value);
+   PhysicsSettingResult SetDamping(float value);
+   void                 SetMaterial(const PhysicsMaterial &value);
 
  private:
    friend class PhysicsScene;
 
-    float           m_mass;
-    float3          m_inertia;
-    float           m_damping;
-    PhysicsMaterial m_material;
+   float           m_mass;
+   float3          m_inertia;
+   float           m_damping;
+   PhysicsMaterial m_material;
 };
 
 // ============================================================================
@@ -429,32 +431,32 @@ class PhysicsProperties
 class PhysicsScene
 {
  public:
-    /// Construct a physics scene with storage for at most capacity bodies.
-    /// 构造最多容纳 capacity 个刚体的场景。
-    explicit PhysicsScene(int32_t capacity = 32);
-    ~PhysicsScene();
+   /// Construct a physics scene with storage for at most capacity bodies.
+   /// 构造最多容纳 capacity 个刚体的场景。
+   explicit PhysicsScene(int32_t capacity = 32);
+   ~PhysicsScene();
 
-    bool IsValid() const;
-    bool AddStaticBody(GameObject &object, Collider &collider, PhysicsMaterial &material);
-    bool AddKinematicBody(GameObject &object, Collider &collider, PhysicsMaterial &material);
-    bool AddDynamicBody(GameObject &object, Collider &collider, PhysicsProperties &properties);
-    bool RemoveBody(GameObject &object);
-    bool HasBody(const GameObject &object) const;
-    PhysicsSettingResult SetGravity(float3 value);
-    float3 GetGravity() const;
-    PhysicsSettingResult SetDrag(float value);
-    float GetDrag() const;
+   bool IsValid() const;
+   bool AddStaticBody(GameObject &object, Collider &collider, PhysicsMaterial &material);
+   bool AddKinematicBody(GameObject &object, Collider &collider, PhysicsMaterial &material);
+   bool AddDynamicBody(GameObject &object, Collider &collider, PhysicsProperties &properties);
+   bool RemoveBody(GameObject &object);
+   bool HasBody(const GameObject &object) const;
+   PhysicsSettingResult SetGravity(float3 value);
+   float3               GetGravity() const;
+   PhysicsSettingResult SetDrag(float value);
+   float                GetDrag() const;
 
    float3 GetVelocity(const GameObject &object) const;
    float3 GetAngularVelocity(const GameObject &object) const;
    bool   SetVelocity(GameObject &object, const float3 &velocity);
    bool   SetAngularVelocity(GameObject &object, const float3 &angularVelocity);
    bool   AddForce(GameObject &object, const float3 &force);
-    bool   AddTorque(GameObject &object, const float3 &torque);
-    bool   AddImpulse(GameObject &object, const float3 &impulse);
-    bool   AddAngularImpulse(GameObject &object, const float3 &impulse);
-    /// Write up to capacity current contacts for object.
-    int32_t GetContacts(const GameObject &object, PhysicsContact *output, int32_t capacity) const;
+   bool   AddTorque(GameObject &object, const float3 &torque);
+   bool   AddImpulse(GameObject &object, const float3 &impulse);
+   bool   AddAngularImpulse(GameObject &object, const float3 &impulse);
+   /// Write up to capacity current contacts for object.
+   int32_t GetContacts(const GameObject &object, PhysicsContact *output, int32_t capacity) const;
 
    /// Remove all dynamic bodies and static colliders from this scene.
    /// 移除此场景中的所有动态刚体和静态碰撞体。
@@ -509,23 +511,25 @@ class Renderer
 
    // Present shows the finished frame.
    // Present 显示完成的画面。
-    void Present();
-    void Resize(int32_t w, int32_t h);
-    void SetMainLight(const DirectionalLight &light) { mainLight = light; }
-    int32_t GetPresentedWidth() const;
-    int32_t GetPresentedHeight() const;
-    const ColorA *GetPresentedPixels() const;
+   void          Present();
+   void          Resize(int32_t w, int32_t h);
+   void          SetMainLight(const DirectionalLight &light) { mainLight = light; }
+   int32_t       GetPresentedWidth() const;
+   int32_t       GetPresentedHeight() const;
+   const ColorA *GetPresentedPixels() const;
 
-  private:
-    struct PresentedFrameView {
-        const ColorA *pixels;
-        int32_t width;
-        int32_t height;
+ private:
+   struct PresentedFrameView {
+      const ColorA *pixels;
+      int32_t       width;
+      int32_t       height;
 
-        PresentedFrameView() : pixels(nullptr), width(0), height(0) {}
-        PresentedFrameView(const ColorA *viewPixels, int32_t viewWidth, int32_t viewHeight)
-            : pixels(viewPixels), width(viewWidth), height(viewHeight) {}
-    };
+      PresentedFrameView() : pixels(nullptr), width(0), height(0) {}
+      PresentedFrameView(const ColorA *viewPixels, int32_t viewWidth, int32_t viewHeight)
+          : pixels(viewPixels), width(viewWidth), height(viewHeight)
+      {
+      }
+   };
 
    int32_t  m_width;
    int32_t  m_height;
@@ -537,21 +541,21 @@ class Renderer
    // Color buffer, m_width * m_height.
    // 颜色缓冲区，大小为 m_width * m_height。
    ColorA *m_colorBuf;
-   ColorA *m_fxaaBuf;       // FXAA buffer, allocated lazily / FXAA 缓冲区，按需分配
-   ColorA *m_taaBuf;        // TAA output buffer, allocated lazily / TAA
-                            // 输出缓冲区，按需分配
-   ColorA *m_taaHistory;    // TAA previous color history / TAA 上一帧颜色历史
-   float  *m_taaDepth;      // TAA previous 1/z depth history / TAA 上一帧 1/z 深度历史
-   ColorA *m_ssaaBuf;       // SSAA resolved output buffer / SSAA 降采样输出缓冲区
-   float  *m_depthBuf;      // depth buffer, m_width * m_height / 深度缓冲区，大小为
-                            // m_width * m_height
-   ColorA  *m_msaaColorBuf; // 4 samples per pixel / 每像素 4 个采样颜色
-   float   *m_msaaDepthBuf; // 4 samples per pixel / 每像素 4 个采样深度
-    bool     m_taaValid;
-    uint32_t m_taaFrameIndex;
-    PresentedFrameView m_presentedFrame;
+   ColorA *m_fxaaBuf;                 // FXAA buffer, allocated lazily / FXAA 缓冲区，按需分配
+   ColorA *m_taaBuf;                  // TAA output buffer, allocated lazily / TAA
+                                      // 输出缓冲区，按需分配
+   ColorA *m_taaHistory;              // TAA previous color history / TAA 上一帧颜色历史
+   float  *m_taaDepth;                // TAA previous 1/z depth history / TAA 上一帧 1/z 深度历史
+   ColorA *m_ssaaBuf;                 // SSAA resolved output buffer / SSAA 降采样输出缓冲区
+   float  *m_depthBuf;                // depth buffer, m_width * m_height / 深度缓冲区，大小为
+                                      // m_width * m_height
+   ColorA            *m_msaaColorBuf; // 4 samples per pixel / 每像素 4 个采样颜色
+   float             *m_msaaDepthBuf; // 4 samples per pixel / 每像素 4 个采样深度
+   bool               m_taaValid;
+   uint32_t           m_taaFrameIndex;
+   PresentedFrameView m_presentedFrame;
 
-    void InvalidatePresentedView();
+   void          InvalidatePresentedView();
    bool          EnsureMsaaBuffers();
    void          ResolveMsaa();
    bool          ApplyFxaa();

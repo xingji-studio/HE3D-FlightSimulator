@@ -38,6 +38,12 @@
 
 `MeshCollider` borrows a mesh. After replacing that mesh value, call `Refresh()` or `PhysicsScene::RefreshCollider()`.
 
+`ConvexCollider(mesh, ConvexBuildMode::ConvexDecomposition)` builds up to sixteen local convex
+parts and reports that count through `GetPartCount()`. The result is a fixed `32^3` voxelized
+approximation of a closed source mesh, not an exact mesh convex decomposition. Thin features can
+be lost or cause construction to fail. This mode exposes multipart collider data; multipart
+PhysicsScene contact traversal is a separate capability.
+
 ## XAPI build
 
 `HE3D_BACKEND=XAPI` requires an explicit matched SDK root:

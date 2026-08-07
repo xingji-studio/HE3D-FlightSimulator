@@ -1033,7 +1033,7 @@ static bool BuildDecomposition(const Mesh &mesh, ConvexBuildData &output)
       return false;
    }
    ConvexBuildData built;
-   built.mode = ConvexBuildMode::SingleHull;
+   built.mode = ConvexBuildMode::ConvexDecomposition;
    for (int32_t i = 0; i < leafCount; i++) {
       if (!BuildRegionPart(leaves[i], transform, workspace, &built.parts[built.partCount++])) {
          FreeRegions(leaves, leafCount);
@@ -1061,11 +1061,11 @@ static bool BuildDecomposition(const Mesh &mesh, ConvexBuildData &output)
 
 bool ConvexBuilder::Build(const Mesh &mesh, ConvexBuildMode mode, ConvexBuildData &output)
 {
-   if (mode != ConvexBuildMode::SingleHull) {
-      return false;
-   }
    ConvexBuildData built;
-   if (!BuildSingleHull(mesh, built)) {
+   bool valid = mode == ConvexBuildMode::SingleHull            ? BuildSingleHull(mesh, built)
+                : mode == ConvexBuildMode::ConvexDecomposition ? BuildDecomposition(mesh, built)
+                                                               : false;
+   if (!valid) {
       return false;
    }
    output = built;

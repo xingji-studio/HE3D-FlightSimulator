@@ -60,8 +60,8 @@ static void DynamicSatAndConvexCachesGenerateContacts()
    int count = HE3D::GenerateInternalContacts(upperShape, lowerShape, contacts, 4);
    Check(count > 0 && count <= 4, "box SAT generates capped dynamic contacts");
 
-    HE3D::ConvexCollider lowerConvex(cubeMeshA, HE3D::ConvexBuildMode::SingleHull);
-    HE3D::ConvexCollider upperConvex(cubeMeshB, HE3D::ConvexBuildMode::SingleHull);
+   HE3D::ConvexCollider lowerConvex(cubeMeshA, HE3D::ConvexBuildMode::SingleHull);
+   HE3D::ConvexCollider upperConvex(cubeMeshB, HE3D::ConvexBuildMode::SingleHull);
    lowerShape = HE3D::Detail::ColliderAccess::From(lower, lowerConvex);
    upperShape = HE3D::Detail::ColliderAccess::From(upper, upperConvex);
    count      = HE3D::GenerateInternalContacts(upperShape, lowerShape, contacts, 4);
@@ -71,6 +71,36 @@ static void DynamicSatAndConvexCachesGenerateContacts()
    upperShape     = HE3D::Detail::ColliderAccess::From(upper, upperConvex);
    Check(HE3D::GenerateInternalContacts(upperShape, lowerShape, contacts, 4) == 0,
          "convex SAT rejects separated shapes");
+}
+
+static void ConvexColliderAccessExposesIndexedParts()
+{
+   HE3D::float3        parts[108];
+   HE3D::int32_t       count    = 0;
+   HE3D::Mesh          cube     = HE3D::Mesh::CreateCube();
+   const HE3D::float3 *vertices = cube.GetVertices();
+   for (HE3D::int32_t part = 0; part < 3; part++) {
+      for (HE3D::int32_t vertex = 0; vertex < cube.GetVertexCount(); vertex++) {
+         parts[count++] = vertices[vertex] + HE3D::float3(static_cast<float>((part - 1) * 2), 0, 0);
+      }
+   }
+   HE3D::Mesh           mesh = HE3D::Mesh::Create(parts, count);
+   HE3D::ConvexCollider collider(mesh, HE3D::ConvexBuildMode::ConvexDecomposition);
+   HE3D::GameObject     object(mesh);
+   HE3D::int32_t        shapeCount = HE3D::Detail::ColliderAccess::GetShapeCount(collider);
+   Check(collider.IsValid() && shapeCount == collider.GetPartCount() && shapeCount > 1,
+         "collider access exposes every decomposition part");
+   for (HE3D::int32_t part = 0; part < shapeCount; part++) {
+      HE3D::InternalContactShape shape =
+          HE3D::Detail::ColliderAccess::GetShape(object, collider, part);
+      Check(shape.kind == HE3D::InternalShapeKind::Convex && shape.vertices &&
+                shape.vertexCount >= 4 && shape.faceAxes && shape.edgeAxes,
+            "indexed decomposition shape exposes valid convex geometry");
+   }
+   HE3D::InternalContactShape invalid =
+       HE3D::Detail::ColliderAccess::GetShape(object, collider, shapeCount);
+   Check(invalid.vertexCount == 0 && invalid.vertices == nullptr,
+         "out-of-range decomposition shape access is empty");
 }
 
 static void PipelineRejectsInvalidOutputsAndStaticPairs()
@@ -128,6 +158,7 @@ int main()
 {
    MeshContactsSeparateGapFromPenetration();
    DynamicSatAndConvexCachesGenerateContacts();
+   ConvexColliderAccessExposesIndexedParts();
    PipelineRejectsInvalidOutputsAndStaticPairs();
    ConvexManifoldAndSolverRemainFinite();
 

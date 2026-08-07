@@ -38,6 +38,11 @@
 
 `MeshCollider` 借用 mesh。替换该 mesh value 后，调用 `Refresh()` 或 `PhysicsScene::RefreshCollider()`。
 
+`ConvexCollider(mesh, ConvexBuildMode::ConvexDecomposition)` 最多构建十六个局部凸 part，并通过
+`GetPartCount()` 返回数量。结果是 closed source mesh 的固定 `32^3` voxelized approximation，
+不是精确的 mesh convex decomposition。细薄特征可能丢失或导致构建失败。该 mode 只公开 multipart
+collider 数据；multipart PhysicsScene contact traversal 是另一项独立能力。
+
 ## XAPI 构建
 
 `HE3D_BACKEND=XAPI` 需要显式指定匹配的 SDK root：
