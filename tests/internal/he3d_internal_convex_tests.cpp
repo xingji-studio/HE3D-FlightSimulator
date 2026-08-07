@@ -162,6 +162,78 @@ static void BuilderRejectsDegenerateAndZeroVolumeGeometry()
          "zero volume bounds are rejected");
 }
 
+static HE3D::int32_t AppendTranslatedCube(HE3D::float3 *output, HE3D::int32_t offset,
+                                          HE3D::float3 center)
+{
+   HE3D::Mesh cube = HE3D::Mesh::CreateCube();
+   const HE3D::float3 *vertices = cube.GetVertices();
+   for (HE3D::int32_t i = 0; i < cube.GetVertexCount(); i++) {
+      output[offset + i] = vertices[i] + center;
+   }
+   return offset + cube.GetVertexCount();
+}
+
+static void BuilderBuildsCanonicalInternalDecomposition()
+{
+   HE3D::float3 uShape[108];
+   HE3D::int32_t count = 0;
+   count = AppendTranslatedCube(uShape, count, {-2.0f, 0.0f, 0.0f});
+   count = AppendTranslatedCube(uShape, count, {0.0f, 0.0f, 0.0f});
+   count = AppendTranslatedCube(uShape, count, {2.0f, 0.0f, 0.0f});
+   HE3D::Mesh uMesh = HE3D::Mesh::Create(uShape, count);
+
+   HE3D::ConvexBuildData first;
+   HE3D::ConvexBuildData second;
+   Check(HE3D::ConvexBuilder::BuildInternal(
+             uMesh, HE3D::InternalConvexBuildMode::Decomposition, first) &&
+             first.partCount == 3,
+         "internal U-shaped decomposition produces three hull parts");
+   Check(HE3D::ConvexBuilder::BuildInternal(
+             uMesh, HE3D::InternalConvexBuildMode::Decomposition, second) &&
+             SameBuildData(first, second),
+         "internal decomposition output is canonical across repeated builds");
+   Check(first.bounds.min.x < -2.4f && first.bounds.max.x > 2.4f,
+         "decomposition stores aggregate bounds");
+}
+
+static void BuilderDecompositionFailureIsAtomic()
+{
+   HE3D::float3 cross[180];
+   HE3D::int32_t count = 0;
+   for (HE3D::int32_t i = 0; i < 5; i++) {
+      HE3D::float3 center = {static_cast<float>((i - 2) * 2), 0.0f, 0.0f};
+      count = AppendTranslatedCube(cross, count, center);
+   }
+   HE3D::Mesh mesh = HE3D::Mesh::Create(cross, count);
+   HE3D::ConvexBuildData data;
+   Check(HE3D::ConvexBuilder::BuildInternal(
+             mesh, HE3D::InternalConvexBuildMode::Decomposition, data),
+         "internal cross-shaped decomposition succeeds");
+   HE3D::ConvexBuildData previous = data;
+   Check(!HE3D::ConvexBuilder::BuildInternal(
+             HE3D::Mesh::CreateCube(), HE3D::InternalConvexBuildMode::Decomposition, data) &&
+             SameBuildData(previous, data),
+         "decomposition failure preserves existing build data");
+}
+
+static void BuilderDecompositionEnforcesPartLimit()
+{
+   HE3D::float3 manyParts[612];
+   HE3D::int32_t count = 0;
+   for (HE3D::int32_t i = 0; i < 17; i++) {
+      HE3D::float3 center = {static_cast<float>(i * 2), 0.0f, 0.0f};
+      count = AppendTranslatedCube(manyParts, count, center);
+   }
+   HE3D::ConvexBuildData data;
+   Check(!HE3D::ConvexBuilder::BuildInternal(
+             HE3D::Mesh::Create(manyParts, count),
+             HE3D::InternalConvexBuildMode::Decomposition, data),
+         "internal decomposition enforces the sixteen-part limit");
+   Check(!HE3D::ConvexBuilder::BuildInternal(
+             HE3D::Mesh::CreateCube(), HE3D::InternalConvexBuildMode::SingleHull, data),
+         "internal single-hull mode is not exposed through decomposition entry point");
+}
+
 int main()
 {
    BuilderProducesSingleHullAndPreservesOldDataOnFailure();
@@ -169,6 +241,9 @@ int main()
    BuilderCanonicalizesInputOrder();
    BuilderEnforcesInputAndAxisLimits();
    BuilderRejectsDegenerateAndZeroVolumeGeometry();
+   BuilderBuildsCanonicalInternalDecomposition();
+   BuilderDecompositionFailureIsAtomic();
+   BuilderDecompositionEnforcesPartLimit();
    if (g_failures == 0) {
       std::printf("he3d_internal_convex_tests passed\n");
    }
