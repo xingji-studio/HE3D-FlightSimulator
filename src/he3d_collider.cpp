@@ -515,6 +515,49 @@ static bool AddUniqueContact(InternalContact *contacts, int32_t *count, int32_t 
    return true;
 }
 
+static bool ContactPreferred(const InternalContact &left, const InternalContact &right)
+{
+   if (left.penetration != right.penetration) return left.penetration > right.penetration;
+   if (left.point.x != right.point.x) return left.point.x < right.point.x;
+   if (left.point.y != right.point.y) return left.point.y < right.point.y;
+   if (left.point.z != right.point.z) return left.point.z < right.point.z;
+   if (left.normal.x != right.normal.x) return left.normal.x < right.normal.x;
+   if (left.normal.y != right.normal.y) return left.normal.y < right.normal.y;
+   return left.normal.z < right.normal.z;
+}
+
+static void SortContactsByPriority(InternalContact *contacts, int32_t count)
+{
+   for (int32_t i = 1; i < count; i++) {
+      InternalContact value    = contacts[i];
+      int32_t         position = i;
+      while (position > 0 && ContactPreferred(value, contacts[position - 1])) {
+         contacts[position] = contacts[position - 1];
+         position--;
+      }
+      contacts[position] = value;
+   }
+}
+
+static void AddStaticContactCandidate(InternalContact *contacts, int32_t *count,
+                                      const InternalContact &contact)
+{
+   if (!contacts || !count || contact.penetration <= 0.0f) return;
+   for (int32_t i = 0; i < *count; i++) {
+      if ((contacts[i].point - contact.point).lengthSq() >= 0.000001f) continue;
+      if (ContactPreferred(contact, contacts[i])) contacts[i] = contact;
+      return;
+   }
+   if (*count < 32) {
+      contacts[(*count)++] = contact;
+      return;
+   }
+   int32_t worst = 0;
+   for (int32_t i = 1; i < *count; i++)
+      if (ContactPreferred(contacts[worst], contacts[i])) worst = i;
+   if (ContactPreferred(contact, contacts[worst])) contacts[worst] = contact;
+}
+
 static void ReduceManifold(InternalContact *contacts, int32_t *count, int32_t maxContacts)
 {
    if (!contacts || !count || *count <= 0 || maxContacts <= 0) {
@@ -586,8 +629,7 @@ int32_t Detail::ContactPipeline::CollectStaticTriangles(const InternalContactSha
    InternalContact rawContacts[32];
    int32_t         rawCount = 0;
    const float3   *vertices = staticShape.mesh->GetVertices();
-   for (int32_t triangle = 0; triangle < staticShape.mesh->GetVertexCount() && rawCount < 32;
-        triangle += 3) {
+   for (int32_t triangle = 0; triangle < staticShape.mesh->GetVertexCount(); triangle += 3) {
       float3 a =
           staticShape.object->position + staticShape.object->orientation.rotate(vertices[triangle]);
       float3 b = staticShape.object->position +
@@ -623,10 +665,11 @@ int32_t Detail::ContactPipeline::CollectStaticTriangles(const InternalContactSha
          contact.penetration = -distance;
          contact.normal      = normal;
          contact.point       = projected;
-         AddUniqueContact(rawContacts, &rawCount, 32, contact);
+         AddStaticContactCandidate(rawContacts, &rawCount, contact);
       }
    }
 
+   SortContactsByPriority(rawContacts, rawCount);
    ReduceManifold(rawContacts, &rawCount, maxContacts);
    int32_t count = rawCount < maxContacts ? rawCount : maxContacts;
    for (int32_t i = 0; i < count; i++) {

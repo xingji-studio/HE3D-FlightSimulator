@@ -44,6 +44,44 @@ static void MeshContactsSeparateGapFromPenetration()
          "real penetration generates positive mesh contacts");
 }
 
+static HE3D::Mesh CreateLayeredTriangles(bool deepFirst)
+{
+   HE3D::float3  vertices[99];
+   HE3D::int32_t count = 0;
+   for (HE3D::int32_t layer = 0; layer < 33; layer++) {
+      bool  deep        = deepFirst ? layer == 0 : layer == 32;
+      float y           = deep ? 0.4f : 0.0f;
+      vertices[count++] = {-2.0f, y, -2.0f};
+      vertices[count++] = {2.0f, y, 2.0f};
+      vertices[count++] = {2.0f, y, -2.0f};
+   }
+   return HE3D::Mesh::Create(vertices, count);
+}
+
+static void StaticTriangleDiscoveryScansPastWorkspacePrefix()
+{
+   HE3D::Mesh        cubeMesh = HE3D::Mesh::CreateCube();
+   HE3D::GameObject  boxObject(cubeMesh);
+   HE3D::BoxCollider boxCollider(1.0f, 1.0f, 1.0f);
+   boxObject.position = {0.0f, 0.49f, 0.0f};
+   HE3D::InternalContact contacts[1];
+
+   HE3D::Mesh         lateMesh = CreateLayeredTriangles(false);
+   HE3D::GameObject   lateObject(lateMesh);
+   HE3D::MeshCollider lateCollider(lateMesh);
+   int   lateCount = CollectBoxMesh(boxObject, boxCollider, lateObject, lateCollider, contacts, 1);
+   float latePenetration = lateCount == 1 ? contacts[0].penetration : 0.0f;
+
+   HE3D::Mesh         earlyMesh = CreateLayeredTriangles(true);
+   HE3D::GameObject   earlyObject(earlyMesh);
+   HE3D::MeshCollider earlyCollider(earlyMesh);
+   int earlyCount = CollectBoxMesh(boxObject, boxCollider, earlyObject, earlyCollider, contacts, 1);
+   float earlyPenetration = earlyCount == 1 ? contacts[0].penetration : 0.0f;
+   Check(lateCount == 1 && earlyCount == 1 && latePenetration > 0.4f &&
+             latePenetration == earlyPenetration,
+         "static triangle contacts select late deep candidates independent of triangle order");
+}
+
 static void DynamicSatAndConvexCachesGenerateContacts()
 {
    HE3D::Mesh       cubeMeshA = HE3D::Mesh::CreateCube(1.0f, 1.0f, 1.0f);
@@ -157,6 +195,7 @@ static void ConvexManifoldAndSolverRemainFinite()
 int main()
 {
    MeshContactsSeparateGapFromPenetration();
+   StaticTriangleDiscoveryScansPastWorkspacePrefix();
    DynamicSatAndConvexCachesGenerateContacts();
    ConvexColliderAccessExposesIndexedParts();
    PipelineRejectsInvalidOutputsAndStaticPairs();

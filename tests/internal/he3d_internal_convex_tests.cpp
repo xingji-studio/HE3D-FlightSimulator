@@ -161,6 +161,27 @@ static HE3D::Mesh CreateConcaveU()
    return HE3D::Mesh::Create(vertices, count);
 }
 
+static void SingleHullRejectsNonConvexAndInvalidTopology()
+{
+   HE3D::ConvexBuildData data;
+   Check(!HE3D::ConvexBuilder::Build(CreateConcaveU(), HE3D::ConvexBuildMode::SingleHull, data),
+         "single hull rejects a closed concave mesh");
+
+   HE3D::Mesh   cube = HE3D::Mesh::CreateCube();
+   HE3D::float3 openVertices[18];
+   for (int i = 0; i < 18; i++) openVertices[i] = cube.GetVertices()[i];
+   Check(!HE3D::ConvexBuilder::Build(HE3D::Mesh::Create(openVertices, 18),
+                                     HE3D::ConvexBuildMode::SingleHull, data),
+         "single hull rejects open topology");
+
+   HE3D::float3 nonManifold[39];
+   for (int i = 0; i < 36; i++) nonManifold[i] = cube.GetVertices()[i];
+   for (int i = 0; i < 3; i++) nonManifold[36 + i] = cube.GetVertices()[i];
+   Check(!HE3D::ConvexBuilder::Build(HE3D::Mesh::Create(nonManifold, 39),
+                                     HE3D::ConvexBuildMode::SingleHull, data),
+         "single hull rejects non-manifold topology");
+}
+
 static bool AnyPartHullContains(const HE3D::ConvexBuildData &data, HE3D::float3 point);
 
 static void BuilderConnectedUHasMultiplePartsWithoutCavity()
@@ -470,6 +491,7 @@ int main()
    BuilderProducesSingleHullAndPreservesOldDataOnFailure();
    BuilderRejectsNonFiniteAndUnsupportedInput();
    BuilderRejectsInvalidDecompositionInputAtomically();
+   SingleHullRejectsNonConvexAndInvalidTopology();
    BuilderConnectedUHasMultiplePartsWithoutCavity();
    BuilderConnectedCrossPreservesConcavity();
    BuilderPartsAreConvexHullData();

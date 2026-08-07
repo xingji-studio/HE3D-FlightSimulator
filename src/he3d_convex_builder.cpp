@@ -716,14 +716,18 @@ static bool IsConvexInput(const Mesh &mesh)
    const float3 *vertices    = mesh.GetVertices();
    const int32_t vertexCount = mesh.GetVertexCount();
    AABB          bounds(vertices[0], vertices[0]);
-   for (int32_t i = 1; i < vertexCount; i++) IncludePoint(bounds, vertices[i]);
+   float3        interior = {0, 0, 0};
+   for (int32_t i = 0; i < vertexCount; i++) {
+      IncludePoint(bounds, vertices[i]);
+      interior = interior + vertices[i];
+   }
+   interior         = interior / static_cast<float>(vertexCount);
    float3 extent    = bounds.max - bounds.min;
    float  tolerance = HE3D_MAX(extent.x, HE3D_MAX(extent.y, extent.z)) * 0.00001f;
-   float3 centroid  = (bounds.min + bounds.max) * 0.5f;
    for (int32_t triangle = 0; triangle < vertexCount; triangle += 3) {
       float3 a      = vertices[triangle];
       float3 normal = float3::cross(vertices[triangle + 1] - a, vertices[triangle + 2] - a);
-      if (float3::dot(normal, centroid - a) > 0.0f) normal = -normal;
+      if (float3::dot(normal, interior - a) > 0.0f) normal = -normal;
       for (int32_t vertex = 0; vertex < vertexCount; vertex++)
          if (float3::dot(normal, vertices[vertex] - a) > tolerance) return false;
    }
@@ -817,8 +821,7 @@ static bool AddUniqueDirection(float3 *directions, int32_t *count, int32_t capac
 
 static bool BuildSingleHull(const Mesh &mesh, ConvexBuildData &output)
 {
-   if (!mesh.IsValid() || mesh.GetVertexCount() < 12 || mesh.GetVertexCount() > 4096 ||
-       (mesh.GetVertexCount() % 3) != 0) {
+   if (!AnalyzeInput(mesh) || !IsConvexInput(mesh)) {
       return false;
    }
 
