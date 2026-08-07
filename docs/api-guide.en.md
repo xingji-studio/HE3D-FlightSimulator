@@ -5,6 +5,8 @@
 ## Mesh and Texture
 
 `Mesh` and `Texture` are movable values. They own their memory and report creation failure with `IsValid()`.
+`Mesh::Create()` accepts complete triangle lists only: `vertexCount` must be positive and divisible
+by three.
 
 ```cpp
 HE3D::Mesh mesh = HE3D::Mesh::CreateCube(1.0f, 1.0f, 1.0f);

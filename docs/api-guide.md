@@ -5,6 +5,7 @@
 ## Mesh 和 Texture
 
 `Mesh` 和 `Texture` 是可移动 value。它们拥有自己的内存，并用 `IsValid()` 表示创建失败。
+`Mesh::Create()` 只接受完整的三角形列表：`vertexCount` 必须为正数且能被三整除。
 
 ```cpp
 HE3D::Mesh mesh = HE3D::Mesh::CreateCube(1.0f, 1.0f, 1.0f);

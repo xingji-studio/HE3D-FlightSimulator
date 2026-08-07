@@ -95,7 +95,8 @@ class Mesh
    const float2 *GetUVs() const;
    const float3 *GetTriangleNormals() const;
 
-   static Mesh Create(const float3 *srcVertices, int32_t vertexCount);
+    /// vertexCount must be positive and divisible by 3.
+    static Mesh Create(const float3 *srcVertices, int32_t vertexCount);
    static Mesh Create(const float3 *srcVertices, const float2 *srcUvs, int32_t vertexCount);
    static Mesh CreateTriangle(float width = 1.0f, float height = 1.0f);
    static Mesh CreatePlane(float width = 1.0f, float depth = 1.0f);

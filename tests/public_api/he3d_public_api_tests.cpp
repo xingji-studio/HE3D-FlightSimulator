@@ -71,6 +71,11 @@ static void MeshValuesAndRaycastsWork()
 
    HE3D::Mesh invalid = HE3D::Mesh::CreateCube(1.0f, 0.0f, 1.0f);
    Check(!invalid.IsValid(), "Mesh factory returns invalid value on bad dimensions");
+   HE3D::float3 vertices[6] = {};
+   Check(!HE3D::Mesh::Create(vertices, 1).IsValid() && !HE3D::Mesh::Create(vertices, 2).IsValid() &&
+             !HE3D::Mesh::Create(vertices, 4).IsValid() &&
+             HE3D::Mesh::Create(vertices, 6).IsValid(),
+         "Mesh::Create accepts only complete triangle lists");
 }
 
 static void ObjLoaderCountsVertices()
@@ -259,6 +264,31 @@ static void KinematicBodiesUseSceneMotion()
          "PhysicsScene integrates kinematic scene-owned motion");
 }
 
+static void AngularInertiaIsPerAxis()
+{
+   HE3D::Mesh              mesh = HE3D::Mesh::CreateCube();
+   HE3D::BoxCollider       collider(1.0f, 1.0f, 1.0f);
+   HE3D::PhysicsProperties properties;
+   properties.SetInertia({1.0f, 2.0f, 4.0f});
+   HE3D::GameObject   bodyX(mesh);
+   HE3D::GameObject   bodyY(mesh);
+   HE3D::GameObject   bodyZ(mesh);
+   HE3D::PhysicsScene scene(3);
+   scene.SetGravity({0.0f, 0.0f, 0.0f});
+   scene.SetDrag(0.0f);
+   Check(scene.AddDynamicBody(bodyX, collider, properties) &&
+             scene.AddDynamicBody(bodyY, collider, properties) &&
+             scene.AddDynamicBody(bodyZ, collider, properties),
+         "PhysicsScene registers inertia regression bodies");
+   Check(scene.AddAngularImpulse(bodyX, {1.0f, 0.0f, 0.0f}) &&
+             scene.AddAngularImpulse(bodyY, {0.0f, 1.0f, 0.0f}) &&
+             scene.AddAngularImpulse(bodyZ, {0.0f, 0.0f, 1.0f}) &&
+             Near(scene.GetAngularVelocity(bodyX).x, 1.0f, 0.0001f) &&
+             Near(scene.GetAngularVelocity(bodyY).y, 0.5f, 0.0001f) &&
+             Near(scene.GetAngularVelocity(bodyZ).z, 0.25f, 0.0001f),
+         "angular impulses use the matching inertia axis");
+}
+
 int main()
 {
    ApplicationBasePathUsesExplicitContract();
@@ -268,6 +298,7 @@ int main()
    ColliderAndPhysicsSceneUseNewApi();
    PhysicsStepRollsBackOverflow();
    KinematicBodiesUseSceneMotion();
+   AngularInertiaIsPerAxis();
 
    if (g_failures == 0) {
       std::printf("he3d_public_api_tests passed\n");

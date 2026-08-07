@@ -522,7 +522,7 @@ bool Mesh::Init(int32_t vertexCount)
    m_vertexCount     = 0;
    m_capacity        = 0;
 
-   if (vertexCount <= 0) {
+   if (vertexCount <= 0 || (vertexCount % 3) != 0) {
       return false;
    }
 

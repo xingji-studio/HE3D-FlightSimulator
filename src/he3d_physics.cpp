@@ -211,13 +211,16 @@ static float InverseMass(const PhysicsSceneEntry *entry)
    return 1.0f / entry->properties->GetMass();
 }
 
-static float InverseInertia(const PhysicsSceneEntry *entry)
+static float3 InverseInertia(const PhysicsSceneEntry *entry)
 {
-   if (!entry || !IsDynamicKind(entry->motion) || !entry->properties ||
-       entry->properties->GetInertia().x <= 0.0f) {
-      return 0.0f;
+   if (!entry || !IsDynamicKind(entry->motion) || !entry->properties) {
+      return {0, 0, 0};
    }
-   return 1.0f / entry->properties->GetInertia().x;
+   float3 inertia = entry->properties->GetInertia();
+   if (!IsFiniteFloat3(inertia) || inertia.x <= 0.0f || inertia.y <= 0.0f || inertia.z <= 0.0f) {
+      return {0, 0, 0};
+   }
+   return {1.0f / inertia.x, 1.0f / inertia.y, 1.0f / inertia.z};
 }
 
 static bool AddBody(PhysicsSceneState *scene, GameObject &object, Collider &collider,
@@ -399,8 +402,8 @@ static bool IntegrateSceneEntry(PhysicsSceneEntry &entry, float deltaTime, float
    }
    if (!entry.properties || !IsDynamicKind(entry.motion)) return true;
 
-   float inverseMass    = InverseMass(&entry);
-   float inverseInertia = InverseInertia(&entry);
+   float  inverseMass    = InverseMass(&entry);
+   float3 inverseInertia = InverseInertia(&entry);
    entry.runtime.velocity =
        entry.runtime.velocity + (entry.runtime.force * inverseMass + gravity) * deltaTime;
    entry.runtime.angularVelocity =
@@ -490,14 +493,16 @@ static bool ResolveSceneContact(PhysicsSceneEntry &entryA, PhysicsSceneEntry &en
 
    float inertiaTerm = invMassSum;
    if (entryA.object) {
-      float3 ra       = contact.point - entryA.object->position;
-      float3 raCrossN = float3::cross(ra, contact.normal);
-      inertiaTerm += raCrossN.lengthSq() * InverseInertia(&entryA);
+      float3 ra             = contact.point - entryA.object->position;
+      float3 raCrossN       = float3::cross(ra, contact.normal);
+      float3 inverseInertia = InverseInertia(&entryA);
+      inertiaTerm += float3::dot(raCrossN, raCrossN * inverseInertia);
    }
    if (entryB.object) {
-      float3 rb       = contact.point - entryB.object->position;
-      float3 rbCrossN = float3::cross(rb, contact.normal);
-      inertiaTerm += rbCrossN.lengthSq() * InverseInertia(&entryB);
+      float3 rb             = contact.point - entryB.object->position;
+      float3 rbCrossN       = float3::cross(rb, contact.normal);
+      float3 inverseInertia = InverseInertia(&entryB);
+      inertiaTerm += float3::dot(rbCrossN, rbCrossN * inverseInertia);
    }
    if (inertiaTerm <= 0.000001f) {
       return true;
