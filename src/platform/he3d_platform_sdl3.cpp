@@ -31,21 +31,19 @@ static void SdlFree(void *ptr) {
 static bool SdlGetApplicationBasePath(char *buffer, uint64_t bufferSize) {
     if (buffer && bufferSize > 0) buffer[0] = '\0';
     if (!buffer || bufferSize == 0) return false;
-    char *basePath = SDL_GetBasePath();
+    const char *basePath = SDL_GetBasePath();
     if (!basePath) return false;
     size_t length = std::strlen(basePath);
     while (length > 1 && (basePath[length - 1] == '/' || basePath[length - 1] == '\\')) length--;
     bool rootPath = length == 1 && (basePath[0] == '/' || basePath[0] == '\\');
     size_t outputLength = rootPath ? 1 : length + 1;
     if ((uint64_t)outputLength + 1 > bufferSize) {
-        SDL_free(basePath);
         return false;
     }
     for (size_t index = 0; index < length; ++index)
         buffer[index] = basePath[index] == '\\' ? '/' : basePath[index];
     if (!rootPath) buffer[length] = '/';
     buffer[outputLength] = '\0';
-    SDL_free(basePath);
     return true;
 }
 
