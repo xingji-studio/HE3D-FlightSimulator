@@ -52,8 +52,9 @@ static void ApplicationBasePathUsesExplicitContract()
    Check(canChangeWorkingDirectory,
          "public API test host can change the working directory for application base path testing");
    if (canChangeWorkingDirectory) {
-      bool stableAfterChdir = HE3D::GetApplicationBasePath(pathAfterChdir, sizeof(pathAfterChdir)) &&
-                              std::strcmp(buffer, pathAfterChdir) == 0;
+      bool stableAfterChdir =
+          HE3D::GetApplicationBasePath(pathAfterChdir, sizeof(pathAfterChdir)) &&
+          std::strcmp(buffer, pathAfterChdir) == 0;
       Check(chdir(originalWorkingDirectory) == 0,
             "public API test host restores the original working directory");
       Check(stableAfterChdir, "application base path does not depend on the working directory");
