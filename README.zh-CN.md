@@ -5,6 +5,7 @@
 HE3D 是一个 C++11 软件 3D 渲染器，仓库里包含小示例和一个较完整的飞行模拟器示例。同一份引擎代码可以构建为 XJ380/XAPI、SDL3 或控制台后端程序。
 
 第一次写 HE3D 程序先看 [新手入门](docs/getting-started.md)。
+完整文档入口看 [文档索引](docs/index.md)。
 
 ## 构建
 
@@ -79,8 +80,13 @@ XAPI 构建前需要先准备 XJ380 GUI 运行库对象。CMake 会查找 `../XX
 - `examples/PhysicsTest/`：物理和碰撞示例
 - `examples/FlightSimulator/`：飞行模拟器示例
 - `xj380/include/`：XAPI 构建使用的 XJ380 头文件
+- [docs/index.md](docs/index.md)：文档索引
 - [docs/getting-started.md](docs/getting-started.md)：新手入门
-- [docs/technical.md](docs/technical.md)：技术手册和 API 参考
+- [docs/concepts.md](docs/concepts.md)：核心概念和模块职责
+- [docs/api-guide.md](docs/api-guide.md)：公开 API 使用指南
+- [docs/examples.md](docs/examples.md)：示例说明
+- [docs/porting.md](docs/porting.md)：后端移植指南
+- [docs/technical.md](docs/technical.md)：技术总览、完整 API 手册和维护规则
 
 ## 许可证
 

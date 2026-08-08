@@ -1,0 +1,30 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "console-physics-tests",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/console-physics-tests",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "HE3D_BACKEND": "CONSOLE",
+        "HE3D_EXAMPLE": "TriangleTest",
+        "HE3D_BUILD_TESTS": "ON",
+        "HE3D_BUILD_INTERNAL_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "console-physics-tests",
+      "configurePreset": "console-physics-tests"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "console-physics-tests",
+      "configurePreset": "console-physics-tests",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

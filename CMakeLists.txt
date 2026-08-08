@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(HE3D LANGUAGES CXX)
+project(HE3D VERSION 0.9 LANGUAGES CXX)
 
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
@@ -40,6 +40,14 @@ endif()
 
 set(HE3D_CORE_SOURCES
     src/he3d.cpp
+    src/he3d_collider.cpp
+    src/he3d_gltf.cpp
+    src/he3d_convex_builder.cpp
+    src/he3d_physics.cpp
+)
+
+set(HE3D_PRIVATE_INCLUDE_DIRS
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
 )
 
 set(HE3D_FLIGHT_SOURCES
@@ -123,16 +131,60 @@ function(he3d_copy_example_assets target_name)
 endfunction()
 
 if(HE3D_BACKEND STREQUAL "XAPI")
+    set(XJ380_SDK_ROOT
+        ""
+        CACHE PATH
+        "Path to one matched XJ380 source/SDK root"
+    )
+
+    if(NOT XJ380_SDK_ROOT)
+        message(FATAL_ERROR
+            "XJ380_SDK_ROOT is required for HE3D_BACKEND=XAPI. "
+            "Pass -DXJ380_SDK_ROOT=/path/to/matched/xj380")
+    endif()
+
+    if(EXISTS "${XJ380_SDK_ROOT}/user/xapi/include")
+        set(HE3D_DEFAULT_XJ380_INCLUDE_DIR "${XJ380_SDK_ROOT}/user/xapi/include")
+    else()
+        set(HE3D_DEFAULT_XJ380_INCLUDE_DIR "${XJ380_SDK_ROOT}/include")
+    endif()
+
+    set(XJ380_XAPI_INCLUDE_DIR
+        "${HE3D_DEFAULT_XJ380_INCLUDE_DIR}"
+        CACHE PATH
+        "Path to matched XJ380 XAPI headers"
+    )
+
+    set(XJ380_GUI_RUNTIME_DIR
+        "${XJ380_SDK_ROOT}/out/xapi"
+        CACHE PATH
+        "Path to matched XJ380 XAPI runtime objects"
+    )
+
+    if(NOT EXISTS "${XJ380_XAPI_INCLUDE_DIR}/x3api.h")
+        message(FATAL_ERROR
+            "XJ380 XAPI headers not found at ${XJ380_XAPI_INCLUDE_DIR}. "
+            "Set XJ380_XAPI_INCLUDE_DIR to the matched include directory.")
+    endif()
+
+    if(NOT EXISTS "${XJ380_GUI_RUNTIME_DIR}")
+        message(FATAL_ERROR
+            "XJ380 XAPI runtime objects not found at ${XJ380_GUI_RUNTIME_DIR}. "
+            "Set XJ380_GUI_RUNTIME_DIR only if it belongs to the same SDK root.")
+    endif()
+
     add_library(he3d_engine_xapi STATIC
         ${HE3D_CORE_SOURCES}
         src/platform/he3d_platform_xapi.cpp
     )
+    add_library(HE3D::Engine ALIAS he3d_engine_xapi)
 
     target_include_directories(he3d_engine_xapi
         PUBLIC
             ${CMAKE_CURRENT_SOURCE_DIR}/include
         PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/xj380/include
+            ${HE3D_PRIVATE_INCLUDE_DIRS}
+            ${XJ380_XAPI_INCLUDE_DIR}
     )
 
     target_compile_options(he3d_engine_xapi
@@ -147,37 +199,6 @@ if(HE3D_BACKEND STREQUAL "XAPI")
         PUBLIC
             __XJ380_OS__
     )
-
-    set(XJ380_SDK_ROOT
-        "${CMAKE_CURRENT_SOURCE_DIR}/../XXCC-suite"
-        CACHE PATH
-        "Path to the XJ380 development suite"
-    )
-
-    set(XJ380_GUI_RUNTIME_DIR
-        ""
-        CACHE PATH
-        "Path to prebuilt XJ380 GUI runtime objects"
-    )
-    if(NOT XJ380_GUI_RUNTIME_DIR)
-        foreach(candidate
-                "${XJ380_SDK_ROOT}/obj-gui"
-                "${CMAKE_CURRENT_SOURCE_DIR}/../XJ380/out/xapi")
-            if(EXISTS "${candidate}")
-                set(XJ380_GUI_RUNTIME_DIR "${candidate}")
-                break()
-            endif()
-        endforeach()
-    endif()
-
-    if(NOT EXISTS "${XJ380_GUI_RUNTIME_DIR}")
-        message(FATAL_ERROR
-            "XJ380 GUI runtime objects not found. Checked: "
-            "${XJ380_SDK_ROOT}/obj-gui and "
-            "${CMAKE_CURRENT_SOURCE_DIR}/../XJ380/out/xapi. "
-            "Set XJ380_GUI_RUNTIME_DIR to override."
-        )
-    endif()
 
     file(GLOB_RECURSE XJ380_GUI_OBJECTS CONFIGURE_DEPENDS
         "${XJ380_GUI_RUNTIME_DIR}/*.o"
@@ -242,10 +263,13 @@ if(HE3D_BACKEND STREQUAL "SDL3")
             ${HE3D_CORE_SOURCES}
             src/platform/he3d_platform_sdl3.cpp
         )
+        add_library(HE3D::Engine ALIAS he3d_engine_sdl3)
 
         target_include_directories(he3d_engine_sdl3
             PUBLIC
                 ${CMAKE_CURRENT_SOURCE_DIR}/include
+            PRIVATE
+                ${HE3D_PRIVATE_INCLUDE_DIRS}
         )
 
         target_compile_definitions(he3d_engine_sdl3
@@ -301,10 +325,13 @@ if(HE3D_BACKEND STREQUAL "CONSOLE")
         ${HE3D_CORE_SOURCES}
         src/platform/he3d_platform_console.cpp
     )
+    add_library(HE3D::Engine ALIAS he3d_engine_console)
 
     target_include_directories(he3d_engine_console
         PUBLIC
             ${CMAKE_CURRENT_SOURCE_DIR}/include
+        PRIVATE
+            ${HE3D_PRIVATE_INCLUDE_DIRS}
     )
 
     target_compile_definitions(he3d_engine_console
@@ -352,8 +379,14 @@ if(HE3D_BUILD_TESTS)
 
     add_executable(he3d_public_api_tests
         tests/public_api/he3d_public_api_tests.cpp
-        ${HE3D_CORE_SOURCES}
-        src/platform/he3d_platform_console.cpp
+    )
+
+    add_executable(he3d_convex_collider_tests
+        tests/public_api/he3d_convex_collider_tests.cpp
+    )
+
+    add_executable(he3d_physics_edge_tests
+        tests/public_api/he3d_physics_edge_tests.cpp
     )
 
     target_include_directories(he3d_public_api_tests
@@ -361,7 +394,28 @@ if(HE3D_BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
+    target_include_directories(he3d_convex_collider_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_include_directories(he3d_physics_edge_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
     target_compile_definitions(he3d_public_api_tests
+        PRIVATE
+            HE3D_BACKEND_CONSOLE
+            HE3D_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+
+    target_compile_definitions(he3d_convex_collider_tests
+        PRIVATE
+            HE3D_BACKEND_CONSOLE
+    )
+
+    target_compile_definitions(he3d_physics_edge_tests
         PRIVATE
             HE3D_BACKEND_CONSOLE
     )
@@ -373,16 +427,97 @@ if(HE3D_BUILD_TESTS)
             $<$<CONFIG:Debug>:-g>
     )
 
+    target_compile_options(he3d_convex_collider_tests
+        PRIVATE
+            $<$<CONFIG:Release>:${HE3D_RELEASE_OPT_FLAG}>
+            $<$<CONFIG:Debug>:-O0>
+            $<$<CONFIG:Debug>:-g>
+    )
+
+    target_compile_options(he3d_physics_edge_tests
+        PRIVATE
+            $<$<CONFIG:Release>:${HE3D_RELEASE_OPT_FLAG}>
+            $<$<CONFIG:Debug>:-O0>
+            $<$<CONFIG:Debug>:-g>
+    )
+
+    target_link_libraries(he3d_public_api_tests PRIVATE HE3D::Engine)
+    target_link_libraries(he3d_convex_collider_tests PRIVATE HE3D::Engine)
+    target_link_libraries(he3d_physics_edge_tests PRIVATE HE3D::Engine)
+
     add_test(NAME he3d_public_api_tests COMMAND he3d_public_api_tests)
+    add_test(NAME he3d_convex_collider_tests COMMAND he3d_convex_collider_tests)
+    add_test(NAME he3d_physics_edge_tests COMMAND he3d_physics_edge_tests)
     add_test(NAME he3d_include_boundaries
         COMMAND
             ${CMAKE_COMMAND}
                 -DHE3D_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_include_boundaries.cmake
     )
+
+    add_executable(he3d_console_one_frame_smoke
+        tests/integration/he3d_console_one_frame_smoke.cpp
+    )
+    target_link_libraries(he3d_console_one_frame_smoke PRIVATE HE3D::Engine)
+    add_test(NAME he3d_console_one_frame_smoke COMMAND he3d_console_one_frame_smoke)
+    set_tests_properties(he3d_console_one_frame_smoke PROPERTIES LABELS Integration)
 endif()
 
 if(HE3D_BUILD_INTERNAL_TESTS)
     enable_testing()
     message(STATUS "HE3D internal tests enabled")
+
+    add_executable(he3d_internal_convex_tests
+        tests/internal/he3d_internal_convex_tests.cpp
+        ${HE3D_CORE_SOURCES}
+        src/platform/he3d_platform_console.cpp
+    )
+
+    target_include_directories(he3d_internal_convex_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${HE3D_PRIVATE_INCLUDE_DIRS}
+    )
+
+    target_compile_definitions(he3d_internal_convex_tests
+        PRIVATE
+            HE3D_BACKEND_CONSOLE
+    )
+
+    target_compile_options(he3d_internal_convex_tests
+        PRIVATE
+            $<$<CONFIG:Release>:${HE3D_RELEASE_OPT_FLAG}>
+            $<$<CONFIG:Debug>:-O0>
+            $<$<CONFIG:Debug>:-g>
+    )
+
+    add_test(NAME he3d_internal_convex_tests COMMAND he3d_internal_convex_tests)
+
+    add_executable(he3d_internal_physics_tests
+        tests/internal/he3d_internal_physics_tests.cpp
+        ${HE3D_CORE_SOURCES}
+        src/platform/he3d_platform_console.cpp
+    )
+
+    target_include_directories(he3d_internal_physics_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${HE3D_PRIVATE_INCLUDE_DIRS}
+    )
+
+    target_compile_definitions(he3d_internal_physics_tests
+        PRIVATE
+            HE3D_BACKEND_CONSOLE
+    )
+
+    target_compile_options(he3d_internal_physics_tests
+        PRIVATE
+            $<$<CONFIG:Release>:${HE3D_RELEASE_OPT_FLAG}>
+            $<$<CONFIG:Debug>:-O0>
+            $<$<CONFIG:Debug>:-g>
+    )
+
+    add_test(NAME he3d_internal_physics_tests COMMAND he3d_internal_physics_tests)
 endif()

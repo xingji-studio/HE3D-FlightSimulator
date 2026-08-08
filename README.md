@@ -7,6 +7,7 @@ simulator example. The same engine code can be built for XJ380/XAPI, SDL3, or a
 console backend.
 
 For a first project, start with [Getting Started](docs/getting-started.en.md).
+For the full documentation set, use the [Documentation Index](docs/index.en.md).
 
 ## Build
 
@@ -81,8 +82,13 @@ Executables and copied assets are written to `build/`.
 - `examples/PhysicsTest/`: physics and collision example
 - `examples/FlightSimulator/`: flight simulator example
 - `xj380/include/`: XJ380 headers used by the XAPI build
+- [docs/index.en.md](docs/index.en.md): documentation index
 - [docs/getting-started.en.md](docs/getting-started.en.md): beginner guide
-- [docs/technical.en.md](docs/technical.en.md): technical manual and API reference
+- [docs/concepts.en.md](docs/concepts.en.md): core concepts and module responsibilities
+- [docs/api-guide.en.md](docs/api-guide.en.md): public API usage guide
+- [docs/examples.en.md](docs/examples.en.md): example guide
+- [docs/porting.en.md](docs/porting.en.md): backend porting guide
+- [docs/technical.en.md](docs/technical.en.md): technical overview, full API manual, and maintenance rules
 
 ## License
 
