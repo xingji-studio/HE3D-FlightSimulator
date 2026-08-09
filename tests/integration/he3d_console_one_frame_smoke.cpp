@@ -32,9 +32,10 @@ int main()
       camera.fov      = 70.0f;
 
       HE3D::Renderer renderer(window, description.width, description.height);
-      renderer.Clear({0.0f, 0.0f, 0.0f});
-      renderer.DrawGameObject(object, camera, {1.0f, 0.2f, 0.1f});
-      renderer.Present();
+      object.color                           = {1.0f, 0.2f, 0.1f};
+      const HE3D::GameObject *sceneObjects[] = {&object};
+      renderer.SetScene(camera, sceneObjects, 1);
+      renderer.RenderFrame({0.0f, 0.0f, 0.0f});
 
       const HE3D::ColorA *pixels          = renderer.GetPresentedPixels();
       const bool          dimensionsMatch = renderer.GetPresentedWidth() == description.width &&

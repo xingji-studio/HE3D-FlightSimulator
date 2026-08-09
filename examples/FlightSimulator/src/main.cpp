@@ -421,16 +421,15 @@ static bool BuildApplicationResourcePath(char *path, HE3D::uint64_t capacity, co
    return true;
 }
 
-// Draw active terrain tiles and then draw the aircraft.
+// Configure active terrain tiles and then render the aircraft.
 // 绘制活动地形块，然后绘制飞机。
 static void DrawScene(HE3D::Renderer &renderer, TerrainTile *tiles, int tileCount,
-                      const HE3D::GameObject &plane, const HE3D::Texture &planeTexture,
-                      bool hasPlaneTexture, const HE3D::Camera &camera, float tileSize)
+                      HE3D::GameObject &plane, const HE3D::Camera &camera, float tileSize)
 {
-   renderer.Clear(HE3D::color3(0.45f, 0.75f, 1.0f));
-
    HE3D::color3 terrainColor = {0.3f, 0.7f, 0.3f};
    float        drawRadiusSq = (tileSize * 1.45f) * (tileSize * 1.45f);
+   const HE3D::GameObject *sceneObjects[10];
+   int sceneObjectCount = 0;
    for (int i = 0; i < tileCount; i++) {
       if (!tiles[i].active || !tiles[i].mesh.IsValid()) {
          continue;
@@ -439,15 +438,12 @@ static void DrawScene(HE3D::Renderer &renderer, TerrainTile *tiles, int tileCoun
       if (tileDelta.x * tileDelta.x + tileDelta.z * tileDelta.z > drawRadiusSq) {
          continue;
       }
-      renderer.DrawGameObject(tiles[i].object, camera, terrainColor);
+       tiles[i].object.color = terrainColor;
+       sceneObjects[sceneObjectCount++] = &tiles[i].object;
    }
-
-   if (hasPlaneTexture) {
-      renderer.DrawGameObject(plane, camera, planeTexture);
-   } else {
-      renderer.DrawGameObject(plane, camera, HE3D::color3(0.8f, 0.2f, 0.2f));
-   }
-   renderer.Present();
+   sceneObjects[sceneObjectCount++] = &plane;
+   renderer.SetScene(camera, sceneObjects, sceneObjectCount);
+   renderer.RenderFrame({0.45f, 0.75f, 1.0f});
 }
 
 static HE3D::float3 InterpolatePosition(HE3D::float3 previous, HE3D::float3 current, float alpha)
@@ -523,6 +519,8 @@ int main(int argc, char **argv, char **envp)
        planeTexture = HE3D::Texture::LoadImage(resourcePath);
     }
    bool          hasPlaneTexture = planeTexture.IsValid();
+   presentationPlane.color = {0.8f, 0.2f, 0.2f};
+   if (hasPlaneTexture) presentationPlane.SetTexture(planeTexture);
 
    HE3D::BoxCollider       planeCollider(1.0f, 0.45f, 1.4f);
    HE3D::PhysicsProperties planeProperties;
@@ -605,8 +603,7 @@ int main(int argc, char **argv, char **envp)
            InterpolateOrientation(previousOrientation, plane.orientation, alpha);
        UpdateCamera(camera, cameraYaw, presentationPlane, presentationPlane.Forward(), cameraOffset,
                     (float)(frameDelta > 0.0 ? frameDelta : physicsStep));
-       DrawScene(renderer, tiles, tileCount, presentationPlane, planeTexture, hasPlaneTexture,
-                 camera, tileSize);
+        DrawScene(renderer, tiles, tileCount, presentationPlane, camera, tileSize);
 
       fpsFrames++;
       double fpsElapsed = now - fpsStart;

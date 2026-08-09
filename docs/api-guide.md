@@ -33,9 +33,9 @@ object.position = {0.0f, 0.0f, 3.0f};
 
 ```cpp
 HE3D::Renderer renderer(window, width, height);
-renderer.Clear({0.1f, 0.1f, 0.12f});
-renderer.DrawGameObject(object, camera, HE3D::color3(1, 0, 0));
-renderer.Present();
+const HE3D::GameObject *objects[] = {&object};
+renderer.SetScene(camera, objects, 1);
+renderer.RenderFrame({0.1f, 0.1f, 0.12f});
 ```
 
 ## 物理

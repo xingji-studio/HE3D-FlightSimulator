@@ -313,13 +313,49 @@ static void HeightFieldAndRendererRejectUnsafeDimensions()
 
    HE3D::SetSsaaScale(1);
    HE3D::Renderer renderer(nullptr, 2, 2);
-   renderer.Clear({0.0f, 0.0f, 0.0f});
    Check(renderer.GetPresentedPixels() == nullptr,
-         "renderer has no presented frame before Present");
+         "renderer has no presented frame before RenderFrame");
+   renderer.RenderFrame({0.0f, 0.0f, 0.0f});
    renderer.Resize(50000, 50000);
    Check(renderer.GetPresentedWidth() == 0 && renderer.GetPresentedHeight() == 0 &&
              renderer.GetPresentedPixels() == nullptr,
          "renderer rejects oversized resize without exposing a partial frame");
+}
+
+static void TexturedTintWorksWithAndWithoutMsaa()
+{
+   HE3D::SetFxaaEnabled(false);
+   HE3D::SetTaaEnabled(false);
+   HE3D::SetSsaaScale(1);
+   const HE3D::ColorA texels[] = {{255, 255, 255, 255}, {255, 255, 255, 255},
+                                  {255, 255, 255, 255}, {255, 255, 255, 255}};
+   HE3D::Texture texture = HE3D::Texture::Create(texels, 2, 2);
+   HE3D::Mesh mesh = HE3D::Mesh::CreateTriangle(2.0f, 2.0f);
+   HE3D::GameObject object(mesh);
+   HE3D::Camera camera;
+   HE3D::Renderer renderer(nullptr, 32, 32);
+   object.position = {0.0f, 0.0f, 3.0f};
+   camera.position = {0.0f, 0.0f, 0.0f};
+   object.color = {1.0f, 0.0f, 0.0f};
+   object.SetTexture(texture);
+   const HE3D::GameObject *objects[] = {&object};
+   renderer.SetScene(camera, objects, 1);
+
+   for (int msaa = 0; msaa < 2; ++msaa) {
+      HE3D::SetMsaaEnabled(msaa != 0);
+      renderer.RenderFrame({0.0f, 0.0f, 0.0f});
+      const HE3D::ColorA *pixels = renderer.GetPresentedPixels();
+      bool foundTintedPixel = false;
+      for (int i = 0; pixels && i < 32 * 32; ++i) {
+         if (pixels[i].r > 0 || pixels[i].g > 0 || pixels[i].b > 0) {
+            foundTintedPixel = foundTintedPixel || pixels[i].r > 0;
+            Check(pixels[i].g == 0 && pixels[i].b == 0,
+                  "texture tint multiplies texels on the active raster path");
+         }
+      }
+      Check(foundTintedPixel, "textured output remains visible after red tint");
+   }
+   HE3D::SetMsaaEnabled(false);
 }
 
 int main()
@@ -333,6 +369,7 @@ int main()
    KinematicBodiesUseSceneMotion();
    AngularInertiaIsPerAxis();
    HeightFieldAndRendererRejectUnsafeDimensions();
+   TexturedTintWorksWithAndWithoutMsaa();
 
    if (g_failures == 0) {
       std::printf("he3d_public_api_tests passed\n");

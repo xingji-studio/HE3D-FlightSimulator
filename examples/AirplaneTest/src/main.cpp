@@ -51,6 +51,8 @@ int main()
    }
    HE3D::GameObject model(modelMesh);
    model.position = {0.0f, -2.0f, 0.0f};
+   model.color = HE3D::color3(1.0f, 1.0f, 1.0f);
+   const HE3D::GameObject *sceneObjects[] = {&model};
 
    double lastTime = HE3D::TimeSeconds();
    float  angle    = 0.0f;
@@ -71,9 +73,8 @@ int main()
       angle += deltaTime;
       model.orientation = HE3D::quat::FromEuler({0.0f, angle * 0.35f, 0.0f});
 
-      renderer.Clear({0.08f, 0.10f, 0.14f});
-      renderer.DrawGameObject(model, camera, HE3D::color3(1.0f, 1.0f, 1.0f));
-      renderer.Present();
+      renderer.SetScene(camera, sceneObjects, 1);
+      renderer.RenderFrame({0.08f, 0.10f, 0.14f});
       HE3D::PaceFrame(frameStart);
    }
 

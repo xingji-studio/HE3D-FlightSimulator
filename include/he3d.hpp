@@ -156,27 +156,32 @@ class Texture
 };
 
 // ============================================================================
-// GameObject is a mesh instance with position and orientation.
-// GameObject 是带位置和方向的网格实例。
+// GameObject is a mesh instance with transform and material state.
+// GameObject 是带变换和材质状态的网格实例。
 // ============================================================================
 class GameObject
 {
  public:
    float3 position;    // world-space position / 世界空间位置
    quat   orientation; // world-space rotation / 世界空间旋转
+   color3 color;       // solid fallback color / 无纹理时的纯色
 
    explicit GameObject(Mesh &mesh);
 
-   Mesh       &GetMesh();
-   const Mesh &GetMesh() const;
-   void        SetMesh(Mesh &mesh);
+   Mesh          &GetMesh();
+   const Mesh    &GetMesh() const;
+   void           SetMesh(Mesh &mesh);
+   void           SetTexture(const Texture &texture);
+   void           ClearTexture();
+   const Texture *GetTexture() const;
 
    // Return local +Z transformed to world space.
    // 返回局部 +Z 方向转换到世界空间后的方向。
    float3 Forward() const { return orientation.rotate({0, 0, 1}); }
 
  private:
-   Mesh *m_mesh;
+   Mesh          *m_mesh;
+   const Texture *m_texture;
 
    GameObject()                              = delete;
    GameObject(const GameObject &)            = delete;
@@ -501,22 +506,12 @@ class Renderer
    Renderer(Window *window, int32_t w, int32_t h);
    ~Renderer();
 
-   // Clear starts a new frame. Call it once before drawing objects.
-   // Clear 开始新的一帧。绘制物体前调用一次。
-   void Clear(color3 color);
-
-   // Draw one object with a solid color or a texture.
-   // 用纯色或纹理绘制一个物体。
-   void DrawGameObject(const GameObject &obj, const Camera &cam, color3 color);
-   void DrawGameObject(const GameObject &obj, const Camera &cam, const Texture &tex);
-
-   // Present shows the finished frame.
-   // Present 显示完成的画面。
-   void          Present();
-   void          Resize(int32_t w, int32_t h);
-   void          SetMainLight(const DirectionalLight &light) { mainLight = light; }
-   int32_t       GetPresentedWidth() const;
-   int32_t       GetPresentedHeight() const;
+   void    SetScene(const Camera &camera, const GameObject    *const *objects, int32_t objectCount);
+   void    RenderFrame(color3 background);
+   void    Resize(int32_t w, int32_t h);
+   void    SetMainLight(const DirectionalLight &light) { mainLight = light; }
+   int32_t GetPresentedWidth() const;
+   int32_t GetPresentedHeight() const;
    const ColorA *GetPresentedPixels() const;
 
  private:
@@ -532,12 +527,15 @@ class Renderer
       }
    };
 
-   int32_t  m_width;
-   int32_t  m_height;
-   int32_t  m_outputWidth;
-   int32_t  m_outputHeight;
-   uint32_t m_ssaaScale;
-   Window  *m_window;
+   int32_t                   m_width;
+   int32_t                   m_height;
+   int32_t                   m_outputWidth;
+   int32_t                   m_outputHeight;
+   uint32_t                  m_ssaaScale;
+   Window                   *m_window;
+   const Camera             *m_sceneCamera;
+   const GameObject * const *m_sceneObjects;
+   int32_t                   m_sceneObjectCount;
 
    // Color buffer, m_width * m_height.
    // 颜色缓冲区，大小为 m_width * m_height。
@@ -556,16 +554,21 @@ class Renderer
    uint32_t           m_taaFrameIndex;
    PresentedFrameView m_presentedFrame;
 
-   void          InvalidatePresentedView();
-   bool          EnsureMsaaBuffers();
-   void          ResolveMsaa();
-   bool          ApplyFxaa();
-   bool          ApplyTaa(const ColorA *source);
+   void InvalidatePresentedView();
+   void Clear(color3 color);
+   void Present();
+   void DrawObject(const GameObject &object, const Camera &camera);
+   void DrawSolidObject(const GameObject &object, const Camera &camera, color3 color);
+   void DrawTexturedObject(const GameObject &object, const Camera &camera, const Texture &texture);
+   bool EnsureMsaaBuffers();
+   void ResolveMsaa();
+   bool ApplyFxaa();
+   bool ApplyTaa(const ColorA *source);
    const ColorA *ApplySsaa(const ColorA *source);
    float2        CurrentTaaJitter() const;
    void          RasterizeSolid(const float3 *v_view, const float2 *p_screen, color3 color);
    void          RasterizeTextured(const float3 *v_view, const float2 *p_screen, const float2 *uvs,
-                                   float intensity, const Texture &tex);
+                                   float intensity, color3 tint, const Texture &tex);
 
    Renderer(const Renderer &)            = delete;
    Renderer &operator=(const Renderer &) = delete;
