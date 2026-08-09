@@ -421,28 +421,21 @@ static bool BuildApplicationResourcePath(char *path, HE3D::uint64_t capacity, co
    return true;
 }
 
-// Configure active terrain tiles and then render the aircraft.
-// 绘制活动地形块，然后绘制飞机。
+// Update terrain visibility and render the registered scene.
+// 更新地形可见性并绘制已注册场景。
 static void DrawScene(HE3D::Renderer &renderer, TerrainTile *tiles, int tileCount,
-                      HE3D::GameObject &plane, const HE3D::Camera &camera, float tileSize)
+                      const HE3D::Camera &camera, float tileSize)
 {
    HE3D::color3 terrainColor = {0.3f, 0.7f, 0.3f};
    float        drawRadiusSq = (tileSize * 1.45f) * (tileSize * 1.45f);
-   const HE3D::GameObject *sceneObjects[10];
-   int sceneObjectCount = 0;
    for (int i = 0; i < tileCount; i++) {
-      if (!tiles[i].active || !tiles[i].mesh.IsValid()) {
-         continue;
-      }
       HE3D::float3 tileDelta = tiles[i].object.position - camera.position;
-      if (tileDelta.x * tileDelta.x + tileDelta.z * tileDelta.z > drawRadiusSq) {
-         continue;
+      tiles[i].object.visible = tiles[i].active && tiles[i].mesh.IsValid() &&
+                                tileDelta.x * tileDelta.x + tileDelta.z * tileDelta.z <= drawRadiusSq;
+      if (tiles[i].object.visible) {
+         tiles[i].object.color = terrainColor;
       }
-       tiles[i].object.color = terrainColor;
-       sceneObjects[sceneObjectCount++] = &tiles[i].object;
    }
-   sceneObjects[sceneObjectCount++] = &plane;
-   renderer.SetScene(camera, sceneObjects, sceneObjectCount);
    renderer.RenderFrame({0.45f, 0.75f, 1.0f});
 }
 
@@ -513,6 +506,8 @@ int main(int argc, char **argv, char **envp)
    HE3D::GameObject plane(planeMesh);
    plane.position = {0.0f, 13.0f, 0.0f};
    HE3D::GameObject presentationPlane(planeMesh);
+   renderer.SetCamera(camera);
+   renderer.AddObject(presentationPlane);
 
     HE3D::Texture planeTexture;
     if (BuildApplicationResourcePath(resourcePath, sizeof(resourcePath), "biplane.bmp")) {
@@ -545,6 +540,10 @@ int main(int argc, char **argv, char **envp)
    bool               terrainDirty   = true;
    int                pendingCount   = 0;
    int                pendingCursor  = 0;
+   for (int i = 0; i < tileCount; ++i) {
+      tiles[i].object.visible = false;
+      renderer.AddObject(tiles[i].object);
+   }
 
    HE3D::PhysicsScene worldScene(tileCount + 1);
    HE3D::PhysicsMaterial terrainMaterial;
@@ -603,7 +602,7 @@ int main(int argc, char **argv, char **envp)
            InterpolateOrientation(previousOrientation, plane.orientation, alpha);
        UpdateCamera(camera, cameraYaw, presentationPlane, presentationPlane.Forward(), cameraOffset,
                     (float)(frameDelta > 0.0 ? frameDelta : physicsStep));
-        DrawScene(renderer, tiles, tileCount, presentationPlane, camera, tileSize);
+      DrawScene(renderer, tiles, tileCount, camera, tileSize);
 
       fpsFrames++;
       double fpsElapsed = now - fpsStart;

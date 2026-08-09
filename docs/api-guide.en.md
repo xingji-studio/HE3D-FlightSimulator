@@ -35,10 +35,15 @@ object.position = {0.0f, 0.0f, 3.0f};
 
 ```cpp
 HE3D::Renderer renderer(window, width, height);
-const HE3D::GameObject *objects[] = {&object};
-renderer.SetScene(camera, objects, 1);
+renderer.SetCamera(camera);
+renderer.AddObject(object);
 renderer.RenderFrame({0.1f, 0.1f, 0.12f});
 ```
+
+`Renderer` borrows the camera and registered objects. `AddObject()` returns `false` for an object
+already registered; `RemoveObject()` reports whether it removed an object, and `ClearObjects()`
+removes every registration. The renderer reads each object's current transform, color, texture, and
+`visible` state for every frame, so applications update those values directly without re-registering.
 
 ## Physics
 

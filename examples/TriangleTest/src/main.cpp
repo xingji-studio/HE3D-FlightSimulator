@@ -35,10 +35,10 @@ int main()
       return 1;
    }
    HE3D::GameObject triangle(triangleMesh);
-   triangle.position                      = {0.0f, 0.0f, 3.0f};
-   triangle.color                         = {1.0f, 0.35f, 0.15f};
-   const HE3D::GameObject *sceneObjects[] = {&triangle};
-   renderer.SetScene(camera, sceneObjects, 1);
+   triangle.position = {0.0f, 0.0f, 3.0f};
+   triangle.color    = {1.0f, 0.35f, 0.15f};
+   renderer.SetCamera(camera);
+   renderer.AddObject(triangle);
 
    double lastTime = HE3D::TimeSeconds();
    float  angle    = 0.0f;

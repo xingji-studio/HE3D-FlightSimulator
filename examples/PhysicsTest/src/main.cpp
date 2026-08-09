@@ -106,7 +106,9 @@ int main()
    bool   jumpWasDown = false;
    bool   grounded    = false;
    double lastTime    = HE3D::TimeSeconds();
-   const HE3D::GameObject *sceneObjects[] = {&floor, &cube};
+   renderer.SetCamera(camera);
+   renderer.AddObject(floor);
+   renderer.AddObject(cube);
 
    while (!g_quit && !HE3D::WindowShouldClose(window)) {
       double frameStart = HE3D::TimeSeconds();
@@ -137,7 +139,6 @@ int main()
       floor.color = HE3D::color3(0.25f, 0.55f, 0.35f);
       cube.color = grounded ? HE3D::color3(0.95f, 0.75f, 0.25f)
                             : HE3D::color3(0.35f, 0.65f, 1.0f);
-      renderer.SetScene(camera, sceneObjects, 2);
       renderer.RenderFrame({0.08f, 0.10f, 0.13f});
       HE3D::PaceFrame(frameStart);
    }

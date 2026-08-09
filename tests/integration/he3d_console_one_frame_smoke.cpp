@@ -32,9 +32,9 @@ int main()
       camera.fov      = 70.0f;
 
       HE3D::Renderer renderer(window, description.width, description.height);
-      object.color                           = {1.0f, 0.2f, 0.1f};
-      const HE3D::GameObject *sceneObjects[] = {&object};
-      renderer.SetScene(camera, sceneObjects, 1);
+      object.color = {1.0f, 0.2f, 0.1f};
+      renderer.SetCamera(camera);
+      renderer.AddObject(object);
       renderer.RenderFrame({0.0f, 0.0f, 0.0f});
 
       const HE3D::ColorA *pixels          = renderer.GetPresentedPixels();

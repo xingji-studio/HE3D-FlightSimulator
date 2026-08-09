@@ -33,10 +33,14 @@ object.position = {0.0f, 0.0f, 3.0f};
 
 ```cpp
 HE3D::Renderer renderer(window, width, height);
-const HE3D::GameObject *objects[] = {&object};
-renderer.SetScene(camera, objects, 1);
+renderer.SetCamera(camera);
+renderer.AddObject(object);
 renderer.RenderFrame({0.1f, 0.1f, 0.12f});
 ```
+
+`Renderer` 借用 camera 和已注册的 object。重复调用 `AddObject()` 会返回 `false`；
+`RemoveObject()` 返回是否移除了 object，`ClearObjects()` 清空所有注册。渲染器每帧读取 object
+当前的 transform、color、texture 和 `visible` 状态，因此应用可以直接更新这些值，无需重复注册。
 
 ## 物理
 
