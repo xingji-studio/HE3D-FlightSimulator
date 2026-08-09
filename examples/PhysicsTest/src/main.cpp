@@ -84,16 +84,19 @@ int main()
 
    HE3D::MeshCollider      floorCollider(floorMesh);
    HE3D::BoxCollider       cubeCollider(1.0f, 1.0f, 1.0f);
+   HE3D::PhysicsMaterial   floorMaterial;
+   HE3D::PhysicsMaterial   cubeMaterial;
    HE3D::PhysicsProperties cubeProperties;
    cubeProperties.SetMass(1.0f);
    cubeProperties.SetInertia(cubeCollider.EstimateInertia(cubeProperties.GetMass()));
-   cubeProperties.SetFriction(0.45f);
-   cubeProperties.SetRestitution(0.5f);
+   cubeMaterial.SetFriction(0.45f);
+   cubeMaterial.SetRestitution(0.5f);
+   cubeProperties.SetMaterial(cubeMaterial);
    cubeProperties.SetDamping(0.05f);
 
    HE3D::PhysicsScene physics;
    if (!physics.AddDynamicBody(cube, cubeCollider, cubeProperties) ||
-       !physics.AddStaticBody(floor, floorCollider)) {
+       !physics.AddStaticBody(floor, floorCollider, floorMaterial)) {
       HE3D::DestroyWindow(window);
       return 1;
    }
@@ -103,6 +106,9 @@ int main()
    bool   jumpWasDown = false;
    bool   grounded    = false;
    double lastTime    = HE3D::TimeSeconds();
+   renderer.SetCamera(camera);
+   renderer.AddObject(floor);
+   renderer.AddObject(cube);
 
    while (!g_quit && !HE3D::WindowShouldClose(window)) {
       double frameStart = HE3D::TimeSeconds();
@@ -130,12 +136,10 @@ int main()
          grounded = false;
       }
 
-      renderer.Clear({0.08f, 0.10f, 0.13f});
-      renderer.DrawGameObject(floor, camera, HE3D::color3(0.25f, 0.55f, 0.35f));
-      renderer.DrawGameObject(cube, camera,
-                              grounded ? HE3D::color3(0.95f, 0.75f, 0.25f)
-                                       : HE3D::color3(0.35f, 0.65f, 1.0f));
-      renderer.Present();
+      floor.color = HE3D::color3(0.25f, 0.55f, 0.35f);
+      cube.color = grounded ? HE3D::color3(0.95f, 0.75f, 0.25f)
+                            : HE3D::color3(0.35f, 0.65f, 1.0f);
+      renderer.RenderFrame({0.08f, 0.10f, 0.13f});
       HE3D::PaceFrame(frameStart);
    }
 

@@ -33,10 +33,22 @@ object.position = {0.0f, 0.0f, 3.0f};
 
 ```cpp
 HE3D::Renderer renderer(window, width, height);
-renderer.Clear({0.1f, 0.1f, 0.12f});
-renderer.DrawGameObject(object, camera, HE3D::color3(1, 0, 0));
-renderer.Present();
+renderer.SetCamera(camera);
+renderer.AddObject(object);
+renderer.RenderFrame({0.1f, 0.1f, 0.12f});
 ```
+
+`Renderer` 借用 camera 和已注册的 object。每次 `SetCamera()` 都会替换之前借用的 camera；当前
+camera 必须保持地址稳定，直到再次替换或 Renderer 析构。已注册 object 必须保持地址稳定，直到移除、
+调用 `ClearObjects()` 或 Renderer 析构。重复调用 `AddObject()` 会返回 `false`；`RemoveObject()`
+返回是否移除了 object，`ClearObjects()` 清空所有注册。未设置 camera 或没有已注册 object 时，
+`RenderFrame()` 只提交 background。
+
+`GameObject::visible` 默认是 `true`。设为 `false` 会保留注册但跳过绘制。渲染器每帧读取 object
+当前的 transform、color、texture 和 `visible` 状态，因此应用可以直接更新这些值，无需重复注册。
+`SetTexture()` 绑定的 texture 由 `GameObject` 借用，而非 Renderer。只要仍然绑定，即使 object 已移除或
+注册已清空，也不可移动、重赋值或析构 texture。改变 texture 生命周期前，应先调用 `ClearTexture()` 或绑定
+替代 texture。
 
 ## 物理
 

@@ -460,13 +460,23 @@ RayHit RaycastMeshTriangles(const Ray &ray, const GameObject &object)
    return found ? bestHit : result;
 }
 
-GameObject::GameObject(Mesh &mesh) : position{0, 0, 0}, orientation{1, 0, 0, 0}, m_mesh(&mesh) {}
+GameObject::GameObject(Mesh &mesh)
+    : position{0, 0, 0}, orientation{1, 0, 0, 0}, color{0.8f, 0.8f, 0.8f}, visible(true),
+      m_mesh(&mesh), m_texture(nullptr)
+{
+}
 
 Mesh &GameObject::GetMesh() { return *m_mesh; }
 
 const Mesh &GameObject::GetMesh() const { return *m_mesh; }
 
 void GameObject::SetMesh(Mesh &mesh) { m_mesh = &mesh; }
+
+void GameObject::SetTexture(const Texture &texture) { m_texture = &texture; }
+
+void GameObject::ClearTexture() { m_texture = nullptr; }
+
+const Texture *GameObject::GetTexture() const { return m_texture; }
 
 // ============================================================================
 // [5] Mesh allocation helpers.
@@ -1128,7 +1138,8 @@ Texture Texture::LoadImage(const char *filename)
 // ============================================================================
 Renderer::Renderer(Window *window, int32_t w, int32_t h)
     : m_width(w), m_height(h), m_outputWidth(w), m_outputHeight(h), m_ssaaScale(GetSsaaScale()),
-      m_window(window), m_presentedFrame()
+      m_window(window), m_sceneCamera(nullptr), m_sceneObjects(nullptr), m_sceneObjectCount(0),
+      m_sceneObjectCapacity(0), m_presentedFrame()
 {
    if (w <= 0 || h <= 0) {
       m_width         = 0;
@@ -1193,6 +1204,7 @@ Renderer::Renderer(Window *window, int32_t w, int32_t h)
 
 Renderer::~Renderer()
 {
+   delete[] m_sceneObjects;
    delete[] m_colorBuf;
    delete[] m_fxaaBuf;
    delete[] m_taaBuf;
@@ -1374,6 +1386,93 @@ void Renderer::Clear(color3 color)
    }
 }
 
+void Renderer::SetCamera(const Camera &camera)
+{
+   m_sceneCamera = &camera;
+}
+
+bool Renderer::EnsureObjectCapacity(int32_t capacity)
+{
+   if (capacity <= m_sceneObjectCapacity) {
+      return true;
+   }
+
+   int32_t nextCapacity = m_sceneObjectCapacity > 0 ? m_sceneObjectCapacity : 4;
+   while (nextCapacity < capacity) {
+      if (nextCapacity > 0x3fffffff) {
+         return false;
+      }
+      nextCapacity *= 2;
+   }
+
+   GameObject **objects = new GameObject *[nextCapacity];
+   if (!objects) {
+      return false;
+   }
+   for (int32_t index = 0; index < m_sceneObjectCount; ++index) {
+      objects[index] = m_sceneObjects[index];
+   }
+   delete[] m_sceneObjects;
+   m_sceneObjects        = objects;
+   m_sceneObjectCapacity = nextCapacity;
+   return true;
+}
+
+bool Renderer::AddObject(GameObject &object)
+{
+   for (int32_t index = 0; index < m_sceneObjectCount; ++index) {
+      if (m_sceneObjects[index] == &object) {
+         return false;
+      }
+   }
+   if (!EnsureObjectCapacity(m_sceneObjectCount + 1)) {
+      return false;
+   }
+   m_sceneObjects[m_sceneObjectCount++] = &object;
+   return true;
+}
+
+bool Renderer::RemoveObject(GameObject &object)
+{
+   for (int32_t index = 0; index < m_sceneObjectCount; ++index) {
+      if (m_sceneObjects[index] != &object) {
+         continue;
+      }
+      for (int32_t next = index + 1; next < m_sceneObjectCount; ++next) {
+         m_sceneObjects[next - 1] = m_sceneObjects[next];
+      }
+      m_sceneObjectCount--;
+      return true;
+   }
+   return false;
+}
+
+void Renderer::ClearObjects()
+{
+   m_sceneObjectCount = 0;
+}
+
+void Renderer::RenderFrame(color3 background)
+{
+   Clear(background);
+   if (m_sceneCamera && m_sceneObjects) {
+      for (int32_t index = 0; index < m_sceneObjectCount; ++index) {
+         if (m_sceneObjects[index]->visible) DrawObject(*m_sceneObjects[index], *m_sceneCamera);
+      }
+   }
+   Present();
+}
+
+void Renderer::DrawObject(const GameObject &object, const Camera &camera)
+{
+   const Texture *texture = object.GetTexture();
+   if (texture) {
+      DrawTexturedObject(object, camera, *texture);
+      return;
+   }
+   DrawSolidObject(object, camera, object.color);
+}
+
 static float Halton(uint32_t index, uint32_t base)
 {
    float f = 1.0f;
@@ -1399,12 +1498,11 @@ float2 Renderer::CurrentTaaJitter() const
 }
 
 // ============================================================================
-// [10] DrawGameObject: solid color path.
-// [10] DrawGameObject：纯色绘制路径。
+// [10] Solid material rasterization path.
+// [10] 纯色材质光栅化路径。
 // ============================================================================
-void Renderer::DrawGameObject(const GameObject &obj, const Camera &cam, color3 color)
+void Renderer::DrawSolidObject(const GameObject &obj, const Camera &cam, color3 color)
 {
-   InvalidatePresentedView();
    if (m_width <= 0 || m_height <= 0) return;
    const Mesh &mesh = obj.GetMesh();
    if (!mesh.IsValid() || mesh.GetVertexCount() < 3) return;
@@ -1466,18 +1564,17 @@ void Renderer::DrawGameObject(const GameObject &obj, const Camera &cam, color3 c
 }
 
 // ============================================================================
-// [11] DrawGameObject: textured path.
-// [11] DrawGameObject：纹理绘制路径。
+// [11] Textured material rasterization path.
+// [11] 纹理材质光栅化路径。
 // ============================================================================
-void Renderer::DrawGameObject(const GameObject &obj, const Camera &cam, const Texture &tex)
+void Renderer::DrawTexturedObject(const GameObject &obj, const Camera &cam, const Texture &tex)
 {
-   InvalidatePresentedView();
    if (m_width <= 0 || m_height <= 0) return;
    const Mesh &mesh = obj.GetMesh();
    if (!mesh.IsValid() || mesh.GetVertexCount() < 3) return;
    if (!mesh.GetVertices() || !mesh.GetUVs()) return;
    if (!tex.IsValid()) {
-      DrawGameObject(obj, cam, color3(0.8f, 0.8f, 0.8f));
+      DrawSolidObject(obj, cam, obj.color);
       return;
    }
 
@@ -1533,7 +1630,7 @@ void Renderer::DrawGameObject(const GameObject &obj, const Camera &cam, const Te
          ProjectViewTriangle(clippedVv, ps, halfW, halfH, scaleX, scaleY, jitter.x, jitter.y);
          if (TriangleOutsideViewport(ps, m_width, m_height)) continue;
          if (HE3D_ABS(ScreenTriangleArea(ps)) <= 0.0001f) continue;
-         RasterizeTextured(clippedVv, ps, clippedUvs, intens, tex);
+         RasterizeTextured(clippedVv, ps, clippedUvs, intens, obj.color, tex);
       }
    }
 }
@@ -1652,7 +1749,7 @@ void Renderer::RasterizeSolid(const float3 *vv, const float2 *ps, color3 color)
 // [13] RasterizeTextured / 纹理三角形光栅化
 // ============================================================================
 void Renderer::RasterizeTextured(const float3 *vv, const float2 *ps, const float2 *uvs,
-                                 float intens, const Texture &tex)
+                                 float intens, color3 tint, const Texture &tex)
 {
    float minXf = HE3D_MIN(HE3D_MIN(ps[0].x, ps[1].x), ps[2].x);
    float maxXf = HE3D_MAX(HE3D_MAX(ps[0].x, ps[1].x), ps[2].x);
@@ -1682,7 +1779,7 @@ void Renderer::RasterizeTextured(const float3 *vv, const float2 *ps, const float
    float  duzDx = dw0 * uz0.x + dw1 * uz1.x + dw2 * uz2.x;
    float  dvzDx = dw0 * uz0.y + dw1 * uz1.y + dw2 * uz2.y;
 
-   color3        lc     = mainLight.color * intens;
+   color3        lc     = mainLight.color * tint * intens;
    int           lr     = HE3D_CLAMP((int)(lc.r * 256.0f), 0, 512);
    int           lg     = HE3D_CLAMP((int)(lc.g * 256.0f), 0, 512);
    int           lb     = HE3D_CLAMP((int)(lc.b * 256.0f), 0, 512);

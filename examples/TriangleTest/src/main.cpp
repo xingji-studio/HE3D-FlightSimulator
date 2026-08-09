@@ -36,6 +36,9 @@ int main()
    }
    HE3D::GameObject triangle(triangleMesh);
    triangle.position = {0.0f, 0.0f, 3.0f};
+   triangle.color    = {1.0f, 0.35f, 0.15f};
+   renderer.SetCamera(camera);
+   renderer.AddObject(triangle);
 
    double lastTime = HE3D::TimeSeconds();
    float  angle    = 0.0f;
@@ -52,9 +55,7 @@ int main()
       angle += deltaTime;
       triangle.orientation = HE3D::quat::FromEuler({0.0f, 0.0f, angle});
 
-      renderer.Clear({0.08f, 0.10f, 0.14f});
-      renderer.DrawGameObject(triangle, camera, HE3D::color3(1.0f, 0.35f, 0.15f));
-      renderer.Present();
+      renderer.RenderFrame({0.08f, 0.10f, 0.14f});
       HE3D::PaceFrame(frameStart);
    }
 
