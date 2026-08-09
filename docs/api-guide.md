@@ -46,8 +46,9 @@ camera 必须保持地址稳定，直到再次替换或 Renderer 析构。已注
 
 `GameObject::visible` 默认是 `true`。设为 `false` 会保留注册但跳过绘制。渲染器每帧读取 object
 当前的 transform、color、texture 和 `visible` 状态，因此应用可以直接更新这些值，无需重复注册。
-`SetTexture()` 绑定的 texture 也由 `GameObject` 借用：它绑定在已注册 object 上期间，不可移动、重赋值
-或析构。应先调用 `ClearTexture()`、绑定替代 texture、移除或清空 object 注册，或析构 Renderer。
+`SetTexture()` 绑定的 texture 由 `GameObject` 借用，而非 Renderer。只要仍然绑定，即使 object 已移除或
+注册已清空，也不可移动、重赋值或析构 texture。改变 texture 生命周期前，应先调用 `ClearTexture()` 或绑定
+替代 texture。
 
 ## 物理
 

@@ -50,9 +50,9 @@ registration. Without a camera or registered objects, `RenderFrame()` presents o
 `GameObject::visible` defaults to `true`. Setting it to `false` keeps the object registered but skips
 its drawing. The renderer reads each object's current transform, color, texture, and `visible` state
 for every frame, so applications update those values directly without re-registering. A texture set
-with `SetTexture()` is also borrowed: do not move, replace, or destroy it while it remains bound to a
-registered object. Call `ClearTexture()`, bind a replacement, remove or clear the object registration,
-or destroy the renderer first.
+with `SetTexture()` is borrowed by the `GameObject`, not the renderer. Do not move, replace, or destroy
+it while it remains bound, including after the object is removed or registrations are cleared. Call
+`ClearTexture()` or bind a replacement before changing the texture lifetime.
 
 ## Physics
 

@@ -452,6 +452,16 @@ static void RegisteredRendererObjectsUpdateAcrossFrames()
    renderer.RenderFrame(background);
    Check(!HasForeground(renderer.GetPresentedPixels(), 32 * 32, backgroundPixel),
          "cleared objects are not rendered");
+
+   object.visible = true;
+   Check(renderer.AddObject(object), "renderer registers object for TAA background regression");
+   HE3D::SetTaaEnabled(true);
+   renderer.RenderFrame(background);
+   object.visible = false;
+   renderer.RenderFrame(background);
+   Check(!HasForeground(renderer.GetPresentedPixels(), 32 * 32, backgroundPixel),
+         "TAA does not retain hidden object pixels in a background-only frame");
+   HE3D::SetTaaEnabled(false);
 }
 
 int main()
