@@ -338,8 +338,8 @@ static void TexturedTintWorksWithAndWithoutMsaa()
    camera.position = {0.0f, 0.0f, 0.0f};
    object.color = {1.0f, 0.0f, 0.0f};
    object.SetTexture(texture);
-   const HE3D::GameObject *objects[] = {&object};
-   renderer.SetScene(camera, objects, 1);
+   renderer.SetCamera(camera);
+   Check(renderer.AddObject(object), "renderer registers textured object");
 
    for (int msaa = 0; msaa < 2; ++msaa) {
       HE3D::SetMsaaEnabled(msaa != 0);
@@ -358,6 +358,89 @@ static void TexturedTintWorksWithAndWithoutMsaa()
    HE3D::SetMsaaEnabled(false);
 }
 
+static bool HasForeground(const HE3D::ColorA *pixels, int pixelCount, HE3D::ColorA background)
+{
+   for (int index = 0; pixels && index < pixelCount; ++index) {
+      if (pixels[index].r != background.r || pixels[index].g != background.g ||
+          pixels[index].b != background.b) {
+         return true;
+      }
+   }
+   return false;
+}
+
+static void RegisteredRendererObjectsUpdateAcrossFrames()
+{
+   HE3D::SetFxaaEnabled(false);
+   HE3D::SetTaaEnabled(false);
+   HE3D::SetMsaaEnabled(false);
+   HE3D::SetSsaaScale(1);
+
+   HE3D::Mesh         mesh = HE3D::Mesh::CreateTriangle(2.0f, 2.0f);
+   HE3D::GameObject   object(mesh);
+   HE3D::Camera       camera;
+   HE3D::Renderer     renderer(nullptr, 32, 32);
+   const HE3D::color3 background = {0.0f, 0.0f, 0.0f};
+   const HE3D::ColorA backgroundPixel = {0, 0, 0, 255};
+   object.position = {0.0f, 0.0f, 3.0f};
+   object.color    = {1.0f, 0.0f, 0.0f};
+   camera.position = {0.0f, 0.0f, 0.0f};
+
+   renderer.RenderFrame(background);
+   Check(!HasForeground(renderer.GetPresentedPixels(), 32 * 32, backgroundPixel),
+         "renderer without camera or objects presents only background");
+
+   Check(renderer.AddObject(object), "renderer registers object without a camera");
+   renderer.RenderFrame(background);
+   Check(!HasForeground(renderer.GetPresentedPixels(), 32 * 32, backgroundPixel),
+         "renderer without a camera presents only background");
+
+   renderer.ClearObjects();
+   renderer.SetCamera(camera);
+   renderer.RenderFrame(background);
+   Check(!HasForeground(renderer.GetPresentedPixels(), 32 * 32, backgroundPixel),
+         "renderer without objects presents only background");
+
+   Check(renderer.AddObject(object) && !renderer.AddObject(object),
+         "renderer registers an object once");
+   renderer.RenderFrame(background);
+   Check(HasForeground(renderer.GetPresentedPixels(), 32 * 32, backgroundPixel),
+         "registered object is rendered");
+
+   object.visible = false;
+   renderer.RenderFrame(background);
+   Check(!HasForeground(renderer.GetPresentedPixels(), 32 * 32, backgroundPixel),
+         "invisible registered object is not rendered");
+
+   object.visible  = true;
+   object.color    = {0.0f, 1.0f, 0.0f};
+   camera.position = {100.0f, 0.0f, 0.0f};
+   renderer.RenderFrame(background);
+   Check(!HasForeground(renderer.GetPresentedPixels(), 32 * 32, backgroundPixel),
+         "borrowed camera updates affect the next frame");
+
+   camera.position = {0.0f, 0.0f, 0.0f};
+   renderer.RenderFrame(background);
+   const HE3D::ColorA *pixels = renderer.GetPresentedPixels();
+   bool                foundGreen = false;
+   for (int index = 0; pixels && index < 32 * 32; ++index) {
+      foundGreen = foundGreen || (pixels[index].g > 0 && pixels[index].r == 0);
+   }
+   Check(foundGreen, "borrowed object color updates affect the next frame");
+
+   Check(renderer.RemoveObject(object) && !renderer.RemoveObject(object),
+         "renderer removes registered objects once");
+   renderer.RenderFrame(background);
+   Check(!HasForeground(renderer.GetPresentedPixels(), 32 * 32, backgroundPixel),
+         "removed object is not rendered");
+
+   Check(renderer.AddObject(object), "renderer can re-register a removed object");
+   renderer.ClearObjects();
+   renderer.RenderFrame(background);
+   Check(!HasForeground(renderer.GetPresentedPixels(), 32 * 32, backgroundPixel),
+         "cleared objects are not rendered");
+}
+
 int main()
 {
    ApplicationBasePathUsesExplicitContract();
@@ -370,6 +453,7 @@ int main()
    AngularInertiaIsPerAxis();
    HeightFieldAndRendererRejectUnsafeDimensions();
    TexturedTintWorksWithAndWithoutMsaa();
+   RegisteredRendererObjectsUpdateAcrossFrames();
 
    if (g_failures == 0) {
       std::printf("he3d_public_api_tests passed\n");

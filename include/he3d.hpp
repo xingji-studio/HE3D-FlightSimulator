@@ -165,6 +165,7 @@ class GameObject
    float3 position;    // world-space position / 世界空间位置
    quat   orientation; // world-space rotation / 世界空间旋转
    color3 color;       // solid fallback color / 无纹理时的纯色
+   bool   visible;     // whether the renderer draws this object / 渲染器是否绘制此对象
 
    explicit GameObject(Mesh &mesh);
 
@@ -506,8 +507,11 @@ class Renderer
    Renderer(Window *window, int32_t w, int32_t h);
    ~Renderer();
 
-   void    SetScene(const Camera &camera, const GameObject    *const *objects, int32_t objectCount);
-   void    RenderFrame(color3 background);
+   void SetCamera(const Camera &camera);
+   bool AddObject(GameObject &object);
+   bool RemoveObject(GameObject &object);
+   void ClearObjects();
+   void RenderFrame(color3 background);
    void    Resize(int32_t w, int32_t h);
    void    SetMainLight(const DirectionalLight &light) { mainLight = light; }
    int32_t GetPresentedWidth() const;
@@ -533,9 +537,10 @@ class Renderer
    int32_t                   m_outputHeight;
    uint32_t                  m_ssaaScale;
    Window                   *m_window;
-   const Camera             *m_sceneCamera;
-   const GameObject * const *m_sceneObjects;
-   int32_t                   m_sceneObjectCount;
+   const Camera *m_sceneCamera;
+   GameObject   **m_sceneObjects;
+   int32_t        m_sceneObjectCount;
+   int32_t        m_sceneObjectCapacity;
 
    // Color buffer, m_width * m_height.
    // 颜色缓冲区，大小为 m_width * m_height。
@@ -560,6 +565,7 @@ class Renderer
    void DrawObject(const GameObject &object, const Camera &camera);
    void DrawSolidObject(const GameObject &object, const Camera &camera, color3 color);
    void DrawTexturedObject(const GameObject &object, const Camera &camera, const Texture &texture);
+   bool EnsureObjectCapacity(int32_t capacity);
    bool EnsureMsaaBuffers();
    void ResolveMsaa();
    bool ApplyFxaa();
