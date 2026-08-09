@@ -40,10 +40,19 @@ renderer.AddObject(object);
 renderer.RenderFrame({0.1f, 0.1f, 0.12f});
 ```
 
-`Renderer` borrows the camera and registered objects. `AddObject()` returns `false` for an object
-already registered; `RemoveObject()` reports whether it removed an object, and `ClearObjects()`
-removes every registration. The renderer reads each object's current transform, color, texture, and
-`visible` state for every frame, so applications update those values directly without re-registering.
+`Renderer` borrows the camera and registered objects. Each `SetCamera()` call replaces the previously
+borrowed camera; the current camera must remain address-stable until it is replaced or the renderer
+is destroyed. Registered objects must remain address-stable until they are removed, `ClearObjects()`
+is called, or the renderer is destroyed. `AddObject()` returns `false` for an object already
+registered; `RemoveObject()` reports whether it removed an object, and `ClearObjects()` removes every
+registration. Without a camera or registered objects, `RenderFrame()` presents only its background.
+
+`GameObject::visible` defaults to `true`. Setting it to `false` keeps the object registered but skips
+its drawing. The renderer reads each object's current transform, color, texture, and `visible` state
+for every frame, so applications update those values directly without re-registering. A texture set
+with `SetTexture()` is also borrowed: do not move, replace, or destroy it while it remains bound to a
+registered object. Call `ClearTexture()`, bind a replacement, remove or clear the object registration,
+or destroy the renderer first.
 
 ## Physics
 

@@ -378,12 +378,15 @@ static void RegisteredRendererObjectsUpdateAcrossFrames()
 
    HE3D::Mesh         mesh = HE3D::Mesh::CreateTriangle(2.0f, 2.0f);
    HE3D::GameObject   object(mesh);
+   HE3D::GameObject   remaining(mesh);
    HE3D::Camera       camera;
    HE3D::Renderer     renderer(nullptr, 32, 32);
    const HE3D::color3 background = {0.0f, 0.0f, 0.0f};
    const HE3D::ColorA backgroundPixel = {0, 0, 0, 255};
    object.position = {0.0f, 0.0f, 3.0f};
    object.color    = {1.0f, 0.0f, 0.0f};
+   remaining.position = {0.0f, 0.0f, 3.0f};
+   remaining.color    = {0.0f, 0.0f, 1.0f};
    camera.position = {0.0f, 0.0f, 0.0f};
 
    renderer.RenderFrame(background);
@@ -428,11 +431,21 @@ static void RegisteredRendererObjectsUpdateAcrossFrames()
    }
    Check(foundGreen, "borrowed object color updates affect the next frame");
 
+   Check(renderer.AddObject(remaining), "renderer registers a second object");
    Check(renderer.RemoveObject(object) && !renderer.RemoveObject(object),
          "renderer removes registered objects once");
    renderer.RenderFrame(background);
+   pixels = renderer.GetPresentedPixels();
+   bool foundBlue = false;
+   for (int index = 0; pixels && index < 32 * 32; ++index) {
+      foundBlue = foundBlue || (pixels[index].b > 0 && pixels[index].r == 0);
+   }
+   Check(foundBlue, "removing an object leaves remaining objects rendering");
+
+   Check(renderer.RemoveObject(remaining), "renderer removes the remaining object");
+   renderer.RenderFrame(background);
    Check(!HasForeground(renderer.GetPresentedPixels(), 32 * 32, backgroundPixel),
-         "removed object is not rendered");
+         "removed objects are not rendered");
 
    Check(renderer.AddObject(object), "renderer can re-register a removed object");
    renderer.ClearObjects();
