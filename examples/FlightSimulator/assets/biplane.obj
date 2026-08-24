@@ -1,3 +1,9 @@
+# biplane.obj
+# Model source: https://github.com/SebLague/Software-Rasterizer
+# Author: Sebastian Lague
+# License: MIT
+# Copyright (c) 2025 Sebastian Lague
+# See THIRD_PARTY_NOTICES.md in the repository root for the full license text.
 # Blender 4.3.1
 # www.blender.org
 o Biplane

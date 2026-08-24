@@ -8,6 +8,8 @@
 
 namespace HE3D {
 
+static int g_sdlWindowCount = 0;
+
 struct Window {
     SDL_Window *window;
     SDL_Renderer *renderer;
@@ -112,20 +114,24 @@ static Window *SdlCreateWindow(const WindowDesc *desc) {
         return nullptr;
     }
 
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+    if (g_sdlWindowCount == 0 && !SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         return nullptr;
     }
 
     Window *window = new Window();
     if (!window) {
-        SDL_Quit();
+        if (g_sdlWindowCount == 0) {
+            SDL_Quit();
+        }
         return nullptr;
     }
 
     window->window = SDL_CreateWindow(desc->title, desc->width, desc->height, (SDL_WindowFlags)desc->flags);
     if (!window->window) {
         delete window;
-        SDL_Quit();
+        if (g_sdlWindowCount == 0) {
+            SDL_Quit();
+        }
         return nullptr;
     }
 
@@ -133,7 +139,9 @@ static Window *SdlCreateWindow(const WindowDesc *desc) {
     if (!window->renderer) {
         SDL_DestroyWindow(window->window);
         delete window;
-        SDL_Quit();
+        if (g_sdlWindowCount == 0) {
+            SDL_Quit();
+        }
         return nullptr;
     }
 
@@ -144,6 +152,7 @@ static Window *SdlCreateWindow(const WindowDesc *desc) {
     window->keyUser = nullptr;
     PlatformKeyTrackerInit(&window->keyTracker);
     window->closeRequested = false;
+    g_sdlWindowCount++;
     return window;
 }
 
@@ -170,7 +179,12 @@ static void SdlDestroyWindow(Window *window) {
         SDL_DestroyWindow(window->window);
     }
     delete window;
-    SDL_Quit();
+    if (g_sdlWindowCount > 0) {
+        g_sdlWindowCount--;
+    }
+    if (g_sdlWindowCount == 0) {
+        SDL_Quit();
+    }
 }
 
 static void SdlSetKeyCallback(Window *window, KeyCallback callback, void *user) {

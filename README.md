@@ -93,3 +93,6 @@ Executables and copied assets are written to `build/`.
 ## License
 
 [MIT](LICENSE)
+
+Third-party assets and code are listed with attribution in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

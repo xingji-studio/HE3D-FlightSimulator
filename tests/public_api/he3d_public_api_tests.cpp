@@ -81,6 +81,10 @@ static void MeshValuesAndRaycastsWork()
              !HE3D::Mesh::Create(vertices, 4).IsValid() &&
              HE3D::Mesh::Create(vertices, 6).IsValid(),
          "Mesh::Create accepts only complete triangle lists");
+   Check(HE3D::Mesh::CreateSphere(0.5f, 16, 8).GetVertexCount() == 16 * 8 * 6,
+         "Mesh::CreateSphere builds the requested tessellation");
+   Check(!HE3D::Mesh::CreateSphere(0.5f, 1073741825, 2).IsValid(),
+         "Mesh::CreateSphere rejects overflowing tessellation sizes");
 }
 
 static void ObjLoaderCountsVertices()
@@ -320,6 +324,12 @@ static void HeightFieldAndRendererRejectUnsafeDimensions()
    Check(renderer.GetPresentedWidth() == 0 && renderer.GetPresentedHeight() == 0 &&
              renderer.GetPresentedPixels() == nullptr,
          "renderer rejects oversized resize without exposing a partial frame");
+   {
+      HE3D::Renderer oversized(nullptr, 50000, 50000);
+      Check(oversized.GetPresentedWidth() == 0 && oversized.GetPresentedHeight() == 0 &&
+                oversized.GetPresentedPixels() == nullptr,
+            "renderer constructor rejects oversized buffers and stays destructible");
+   }
 }
 
 static void TexturedTintWorksWithAndWithoutMsaa()

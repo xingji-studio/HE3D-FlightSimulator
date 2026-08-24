@@ -60,9 +60,22 @@ static void RegisteredObjectsHaveStableFrameStorage()
           "removing an object preserves remaining registration order");
 }
 
+static void FailedConstructionLeavesBuffersNull()
+{
+    HE3D::SetSsaaScale(1);
+    HE3D::Renderer oversized(nullptr, 50000, 50000);
+    Check(oversized.m_colorBuf == nullptr && oversized.m_depthBuf == nullptr &&
+              oversized.m_fxaaBuf == nullptr && oversized.m_taaBuf == nullptr &&
+              oversized.m_taaHistory == nullptr && oversized.m_taaDepth == nullptr &&
+              oversized.m_ssaaBuf == nullptr && oversized.m_msaaColorBuf == nullptr &&
+              oversized.m_msaaDepthBuf == nullptr,
+          "failed renderer construction leaves every buffer null");
+}
+
 int main()
 {
     RegisteredObjectsHaveStableFrameStorage();
+    FailedConstructionLeavesBuffersNull();
     if (g_failures == 0) {
        std::printf("he3d_internal_renderer_tests passed\n");
     }

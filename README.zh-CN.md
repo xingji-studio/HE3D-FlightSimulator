@@ -91,3 +91,5 @@ XAPI 构建前需要先准备 XJ380 GUI 运行库对象。CMake 会查找 `../XX
 ## 许可证
 
 [MIT](LICENSE)
+
+第三方资产与代码在 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 中注明来源与许可。

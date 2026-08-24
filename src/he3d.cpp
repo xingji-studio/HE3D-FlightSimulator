@@ -707,7 +707,11 @@ Mesh Mesh::CreateSphere(float radius, int32_t segments, int32_t rings)
    if (segments < 3) segments = 3;
    if (rings < 2) rings = 2;
 
-   int32_t vertexCount = segments * rings * 6;
+   int64_t totalVertices64 = static_cast<int64_t>(segments) * rings * 6;
+   if (totalVertices64 <= 0 || totalVertices64 > 0x7fffffff) {
+      return Mesh();
+   }
+   int32_t vertexCount = static_cast<int32_t>(totalVertices64);
    Mesh    mesh        = Mesh::Create(vertexCount);
    if (!mesh.IsValid()) {
       return Mesh();
@@ -1139,7 +1143,10 @@ Texture Texture::LoadImage(const char *filename)
 Renderer::Renderer(Window *window, int32_t w, int32_t h)
     : m_width(w), m_height(h), m_outputWidth(w), m_outputHeight(h), m_ssaaScale(GetSsaaScale()),
       m_window(window), m_sceneCamera(nullptr), m_sceneObjects(nullptr), m_sceneObjectCount(0),
-      m_sceneObjectCapacity(0), m_presentedFrame()
+      m_sceneObjectCapacity(0), m_colorBuf(nullptr), m_fxaaBuf(nullptr), m_taaBuf(nullptr),
+      m_taaHistory(nullptr), m_taaDepth(nullptr), m_ssaaBuf(nullptr), m_depthBuf(nullptr),
+      m_msaaColorBuf(nullptr), m_msaaDepthBuf(nullptr), m_taaValid(false), m_taaFrameIndex(0),
+      m_presentedFrame()
 {
    if (w <= 0 || h <= 0) {
       m_width         = 0;
